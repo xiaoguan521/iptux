@@ -1,0 +1,71 @@
+name: Build iptux DEB for ARM64
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest-arm64  # 使用 GitHub 提供的 ARM64 runner
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+          git \
+          libgoogle-glog-dev \
+          libgtk-3-dev \
+          libglib2.0-dev \
+          libjsoncpp-dev \
+          g++ \
+          meson \
+          libsigc++-2.0-dev \
+          libayatana-appindicator3-dev \
+          appstream \
+          gettext \
+          ninja-build \
+          dpkg-dev \
+          debhelper \
+          cmake
+    
+    - name: Clone and Build iptux
+      run: |
+        git clone https://github.com/iptux-src/iptux.git
+        cd iptux
+        dpkg-buildpackage -b
+        cd ..
+        mv *.deb iptux-arm64.deb
+    
+    - name: Upload DEB package
+      uses: actions/upload-artifact@v3
+      with:
+        name: iptux-arm64-deb
+        path: iptux-arm64.deb
+        
+    - name: Generate checksum
+      run: |
+        sha256sum iptux-arm64.deb > iptux-arm64.deb.sha256
+        
+    - name: Upload checksum
+      uses: actions/upload-artifact@v3
+      with:
+        name: iptux-arm64-checksum
+        path: iptux-arm64.deb.sha256
+
+    - name: Upload to Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          iptux-arm64.deb
+          iptux-arm64.deb.sha256
