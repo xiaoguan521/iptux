@@ -65,11 +65,13 @@ jobs:
             appstream \
             gettext \
             dh-make
-        
+        cd /work
         # 克隆并构建 iptux
         git clone https://github.com/iptux-src/iptux.git
         cd iptux
         git checkout ${VERSION}
+        # 创建 debian 目录和文件
+        mkdir -p debian
         dpkg-buildpackage -b -us -uc
         cd ..
         mv *.deb /output/iptux-${VERSION}-arm64.deb
@@ -106,3 +108,4 @@ jobs:
         name: iptux-${{ github.event.inputs.version }}-arm64-checksum
         path: output/iptux-${{ github.event.inputs.version }}-arm64.deb.sha256
         retention-days: 7 
+  
