@@ -18,27 +18,26 @@ jobs:
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
     
-    # 修改 apt 源并更新
-    - name: Update APT sources
+    # 更新系统并添加仓库
+    - name: Update system and add repositories
       run: |
         sudo apt-get update
         sudo apt-get install -y software-properties-common
-        sudo add-apt-repository universe
+        sudo add-apt-repository -y universe
+        sudo add-apt-repository -y multiverse
         sudo apt-get update
     
-    # 分步安装依赖
-    - name: Install Cross Compile Tools
+    # 安装 QEMU 和交叉编译工具
+    - name: Install QEMU and Cross Compile Tools
       run: |
-        # 先安装交叉编译工具
+        # 安装 QEMU
+        sudo apt-get install -y qemu-user qemu-user-static binfmt-support
+        
+        # 安装交叉编译工具
         sudo apt-get install -y \
           crossbuild-essential-arm64 \
           gcc-aarch64-linux-gnu \
           g++-aarch64-linux-gnu
-        
-        # 单独安装 qemu
-        wget http://archive.ubuntu.com/ubuntu/pool/universe/q/qemu/qemu-user-static_6.2+dfsg-2ubuntu6.11_amd64.deb
-        sudo dpkg -i qemu-user-static_6.2+dfsg-2ubuntu6.11_amd64.deb || true
-        sudo apt-get install -f -y
     
     # 添加 ARM64 架构支持
     - name: Add ARM64 architecture
@@ -46,7 +45,7 @@ jobs:
         sudo dpkg --add-architecture arm64
         sudo apt-get update
     
-    # 安装其他依赖
+    # 安装构建依赖
     - name: Install Build Dependencies
       run: |
         sudo apt-get install -y \
