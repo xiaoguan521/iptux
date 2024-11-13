@@ -18,89 +18,75 @@ jobs:
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
     
-    # 更新系统并添加仓库
-    - name: Update system and add repositories
+    # 使用 Docker 和 QEMU 创建 ARM64 构建环境
+    - name: Set up ARM64 build environment
       run: |
-        sudo apt-get update
-        sudo apt-get install -y software-properties-common
-        sudo add-apt-repository -y universe
-        sudo add-apt-repository -y multiverse
-        sudo apt-get update
-    
-    # 安装 QEMU 和交叉编译工具
-    - name: Install QEMU and Cross Compile Tools
-      run: |
-        # 安装 QEMU
-        sudo apt-get install -y qemu-user qemu-user-static binfmt-support
+        # 拉取 ARM64 版本的 Ubuntu 镜像
+        docker pull arm64v8/ubuntu:22.04
         
-        # 安装交叉编译工具
-        sudo apt-get install -y \
-          crossbuild-essential-arm64 \
-          gcc-aarch64-linux-gnu \
-          g++-aarch64-linux-gnu
-    
-    # 添加 ARM64 架构支持
-    - name: Add ARM64 architecture
-      run: |
-        sudo dpkg --add-architecture arm64
-        sudo apt-get update
-    
-    # 安装构建依赖
-    - name: Install Build Dependencies
-      run: |
-        sudo apt-get install -y \
+        # 创建构建脚本
+        cat > build.sh << 'EOF'
+        #!/bin/bash
+        set -ex
+        
+        # 更新包列表
+        apt-get update
+        
+        # 安装构建依赖
+        apt-get install -y \
           git \
           meson \
           ninja-build \
           dpkg-dev \
           debhelper \
-          cmake
-    
-    # 安装 ARM64 库
-    - name: Install ARM64 Libraries
-      run: |
-        sudo apt-get install -y \
-          libgoogle-glog-dev:arm64 \
-          libgtk-3-dev:arm64 \
-          libglib2.0-dev:arm64 \
-          libjsoncpp-dev:arm64 \
-          libsigc++-2.0-dev:arm64 \
-          libayatana-appindicator3-dev:arm64 \
-          appstream:arm64 \
+          cmake \
+          gcc \
+          g++ \
+          libgoogle-glog-dev \
+          libgtk-3-dev \
+          libglib2.0-dev \
+          libjsoncpp-dev \
+          libsigc++-2.0-dev \
+          libayatana-appindicator3-dev \
+          appstream \
           gettext
-    
-    - name: Setup Cross Compile Environment
-      run: |
-        echo "Setting up cross compilation environment..."
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CC=${CROSS_COMPILE}gcc
-        export CXX=${CROSS_COMPILE}g++
-        export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
-        export DEB_BUILD_OPTIONS="parallel=$(nproc)"
-    
-    - name: Clone and Build iptux
-      run: |
+        
+        # 克隆并构建 iptux
         git clone https://github.com/iptux-src/iptux.git
         cd iptux
-        git checkout ${{ github.event.inputs.version }}
-        dpkg-buildpackage -aarm64 -b -us -uc
+        git checkout ${VERSION}
+        dpkg-buildpackage -b -us -uc
         cd ..
-        mv *.deb iptux-${{ github.event.inputs.version }}-arm64.deb
+        mv *.deb /output/iptux-${VERSION}-arm64.deb
+        EOF
+        
+        chmod +x build.sh
+        mkdir -p output
+    
+    - name: Build iptux in ARM64 environment
+      run: |
+        docker run --rm \
+          -v $PWD:/work \
+          -v $PWD/output:/output \
+          -e VERSION=${{ github.event.inputs.version }} \
+          arm64v8/ubuntu:22.04 \
+          /work/build.sh
     
     - name: Upload DEB package
       uses: actions/upload-artifact@v3
       with:
         name: iptux-${{ github.event.inputs.version }}-arm64
-        path: iptux-${{ github.event.inputs.version }}-arm64.deb
+        path: output/iptux-${{ github.event.inputs.version }}-arm64.deb
         retention-days: 7
         
     - name: Generate checksum
       run: |
+        cd output
         sha256sum iptux-${{ github.event.inputs.version }}-arm64.deb > iptux-${{ github.event.inputs.version }}-arm64.deb.sha256
         
     - name: Upload checksum
       uses: actions/upload-artifact@v3
       with:
         name: iptux-${{ github.event.inputs.version }}-arm64-checksum
-        path: iptux-${{ github.event.inputs.version }}-arm64.deb.sha256
-        retention-days: 7
+        path: output/iptux-${{ github.event.inputs.version }}-arm64.deb.sha256
+        retention-days: 7 
