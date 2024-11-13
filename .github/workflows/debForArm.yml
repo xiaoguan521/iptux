@@ -15,15 +15,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    # 设置 QEMU
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64
     
+    # 设置 Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
     # 使用 Docker 和 QEMU 创建 ARM64 构建环境
     - name: Set up ARM64 build environment
       run: |
-        # 拉取 ARM64 版本的 Ubuntu 镜像
-        docker pull arm64v8/ubuntu:22.04
-        
         # 创建构建脚本
         cat > build.sh << 'EOF'
         #!/bin/bash
@@ -33,7 +37,7 @@ jobs:
         apt-get update
         
         # 安装构建依赖
-        apt-get install -y \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y \
           git \
           meson \
           ninja-build \
@@ -65,12 +69,13 @@ jobs:
     
     - name: Build iptux in ARM64 environment
       run: |
-        docker run --rm \
+        docker run --rm --platform linux/arm64 \
           -v $PWD:/work \
           -v $PWD/output:/output \
           -e VERSION=${{ github.event.inputs.version }} \
-          arm64v8/ubuntu:22.04 \
-          /work/build.sh
+          -w /work \
+          ubuntu:22.04 \
+          ./build.sh
     
     - name: Upload DEB package
       uses: actions/upload-artifact@v3
