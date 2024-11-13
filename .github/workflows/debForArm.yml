@@ -48,12 +48,23 @@ jobs:
           g++ \
           libgoogle-glog-dev \
           libgtk-3-dev \
-          libglib2.0-dev \
-          libjsoncpp-dev \
-          libsigc++-2.0-dev \
-          libayatana-appindicator3-dev \
-          appstream \
-          gettext
+            git \
+            meson \
+            ninja-build \
+            dpkg-dev \
+            debhelper \
+            cmake \
+            gcc \
+            g++ \
+            libgoogle-glog-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libjsoncpp-dev \
+            libsigc++-2.0-dev \
+            libayatana-appindicator3-dev \
+            appstream \
+            gettext \
+            dh-make
         
         # 克隆并构建 iptux
         git clone https://github.com/iptux-src/iptux.git
