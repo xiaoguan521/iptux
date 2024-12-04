@@ -50,7 +50,7 @@ jobs:
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
           run: |
-            meson setup build
+            meson setup build --default-library=static
             meson compile -C build
             # 复制构建产物到 artifacts 目录
             cp build/src/main/iptux /artifacts/iptux-${{ matrix.arch }}
