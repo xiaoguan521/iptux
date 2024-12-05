@@ -52,6 +52,9 @@ jobs:
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
           run: |
+            # 将目录标记为安全
+            git config --global --add safe.directory /home/runner/work/iptux/iptux
+
             meson setup build \
                 --buildtype=release
 
