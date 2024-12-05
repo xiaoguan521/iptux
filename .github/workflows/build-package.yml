@@ -77,7 +77,7 @@ jobs:
             Package: iptux
             Version: ${VERSION}
             Architecture: ${ARCH}
-            Maintainer: Your Name <your.email@example.com>
+            Maintainer: xiaochen <xiaochen@iptux.com>
             Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25, libsigc++-2.0-0, libayatana-appindicator3-1
             Description: IP Messenger client for Linux
              A modern IP Messenger client for Linux.
@@ -87,19 +87,27 @@ jobs:
             # 构建 deb 包
             dpkg-deb --build pkg
             
-            # 移动并重命名 deb 包
-            mv pkg.deb /artifacts/iptux-${VERSION}-${{ matrix.distro }}-${{ matrix.arch }}.deb
+            # 创建依赖包目录
+            mkdir -p dependencies
+            
+            # 下载所有依赖包
+            cd dependencies
+            apt-get download libgtk-3-0 libglib2.0-0 libjsoncpp25 libsigc++-2.0-0 libayatana-appindicator3-1
+            
+            # 创建依赖包压缩文件
+            cd ..
+            tar czf /artifacts/iptux-dependencies-${VERSION}-${{ matrix.distro }}-${ARCH}.tar.gz dependencies/
 
-            # 同时保留安装目录结构
-            cp -r pkg /artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
+            # 移动单独的 deb 包
+            mv pkg.deb /artifacts/iptux-${VERSION}-${{ matrix.distro }}-${ARCH}.deb
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: iptux-${{ matrix.distro }}-${{ matrix.arch }}
           path: |
-            artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
             artifacts/iptux-*-${{ matrix.distro }}-${{ matrix.arch }}.deb
+            artifacts/iptux-dependencies-*-${{ matrix.distro }}-${{ matrix.arch }}.tar.gz
           retention-days: 7
 
   build-on-mac:
