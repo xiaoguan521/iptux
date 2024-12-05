@@ -22,6 +22,7 @@ env:
   DEB_PKGS: >-
     g++ meson appstream gettext libgoogle-glog-dev libgtk-3-dev libglib2.0-dev
     libjsoncpp-dev libsigc++-2.0-dev libayatana-appindicator3-dev
+    dpkg-dev debhelper devscripts
   MAC_PKGS: >-
     meson appstream gettext glog gtk+3 jsoncpp gtk-mac-integration libsigc++@2
     create-dmg
@@ -61,14 +62,41 @@ jobs:
             mkdir -p pkg
             DESTDIR=$(pwd)/pkg meson install -C build
 
-            # 将整个 pkg 目录复制到 artifacts
+            # 准备打包
+            VERSION=$(git describe --tags --always)
+            ARCH=${{ matrix.arch }}
+            
+            # 创建 DEBIAN 控制目录
+            mkdir -p pkg/DEBIAN
+            
+            # 创建 control 文件
+            cat > pkg/DEBIAN/control << EOF
+            Package: iptux
+            Version: ${VERSION}
+            Architecture: ${ARCH}
+            Maintainer: Your Name <your.email@example.com>
+            Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25, libsigc++-2.0-0, libayatana-appindicator3-1
+            Description: IP Messenger client for Linux
+             A modern IP Messenger client for Linux.
+             It is compatible with IP Messenger for Windows.
+            EOF
+
+            # 构建 deb 包
+            dpkg-deb --build pkg
+            
+            # 移动并重命名 deb 包
+            mv pkg.deb /artifacts/iptux-${VERSION}-${{ matrix.distro }}-${{ matrix.arch }}.deb
+
+            # 同时保留安装目录结构
             cp -r pkg /artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: iptux-${{ matrix.distro }}-${{ matrix.arch }}
-          path: artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
+          path: |
+            artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
+            artifacts/iptux-*-${{ matrix.distro }}-${{ matrix.arch }}.deb
           retention-days: 7
 
   build-on-mac:
