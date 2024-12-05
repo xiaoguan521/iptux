@@ -54,8 +54,8 @@ jobs:
             meson setup build \
                 --buildtype=release
 
-            # 编译主程序
-            meson compile -C build
+            # 使用 ninja 替代 meson compile
+            ninja -C build
 
             # 创建安装目录并安装
             mkdir -p pkg
