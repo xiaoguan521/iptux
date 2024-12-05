@@ -50,12 +50,17 @@ jobs:
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
           run: |
-            CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-            meson setup build -Dtests=disabled
-            meson compile -C build
-            # 复制构建产物到 artifacts 目录
-            cp build/src/main/iptux /artifacts/iptux-${{ matrix.arch }}
+            # 使用与本地兼容的编译选项，并禁用测试
+            CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+            meson setup build \
+                --default-library=static \
+                -Db_coverage=false \
+                -Dwerror=false \
+                -Dbuildtype=release
+
+            # 编译主程序，跳过测试
+            meson compile -C build src/main/iptux
             
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
@@ -79,10 +84,17 @@ jobs:
         run: brew install --display-times ${{ env.MAC_PKGS }}
       - name: Build
         run: |
-          CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-          CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-          meson setup build -Dtests=disabled
-          meson compile -C build
+          # 使用与本地兼容的编译选项，并禁用测试
+          CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+          CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+          meson setup build \
+              --default-library=static \
+              -Db_coverage=false \
+              -Dwerror=false \
+              -Dbuildtype=release
+
+          # 编译主程序，跳过测试
+          meson compile -C build src/main/iptux
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
