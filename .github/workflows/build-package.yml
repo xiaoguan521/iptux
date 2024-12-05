@@ -32,8 +32,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [aarch64]
-        distro: [ubuntu20.04]
+        include:
+          - arch: aarch64
+            distro: ubuntu22.04
+          - arch: ppc64le
+            distro: ubuntu22.04
+          - arch: armv7
+            distro: ubuntu22.04
+          - arch: aarch64
+            distro: ubuntu20.04
     steps:
       - uses: actions/checkout@v4
       - uses: uraimo/run-on-arch-action@v2
@@ -50,25 +57,32 @@ jobs:
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
           run: |
-            # 使用特定版本的编译选项
-            CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_58 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_58" \
-            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_58 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_58" \
             meson setup build \
-                --default-library=static \
-                -Db_coverage=false \
-                -Dwerror=false \
-                -Dbuildtype=release \
-                -Dwarning_level=0
+                --buildtype=release
 
             # 编译主程序
             meson compile -C build
 
-            # 复制构建产物
-            cp build /artifacts/iptux-${{ matrix.arch }}
+            # 创建安装目录并安装
+            mkdir -p pkg
+            DESTDIR=$(pwd)/pkg meson install -C build
+
+            # 将整个 pkg 目录复制到 artifacts
+            cp -r pkg /artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: iptux-${{ matrix.distro }}-${{ matrix.arch }}
+          path: artifacts/iptux-${{ matrix.distro }}-${{ matrix.arch }}
+          retention-days: 7
 
   build-on-mac:
     if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos'
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, macos-13, macos-12]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure Homebrew cache
@@ -76,14 +90,11 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: ${{ runner.os }}-v1
+          key: ${{ runner.os }}-${{ matrix.os }}-v1
       - name: brew install
         run: brew install --display-times ${{ env.MAC_PKGS }}
       - name: Build
         run: |
-          # 使用更多的警告忽略选项
-          CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare -Wno-deprecated-declarations -Wno-cast-function-type" \
-          CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare -Wno-deprecated-declarations -Wno-cast-function-type" \
           meson setup build \
               --default-library=static \
               -Db_coverage=false \
@@ -97,6 +108,6 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: iptux-macos
+          name: iptux-${{ matrix.os }}
           path: build/src/main/iptux
           retention-days: 7
