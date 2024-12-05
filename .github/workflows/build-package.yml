@@ -61,10 +61,10 @@ jobs:
                 -Dwarning_level=0
 
             # 编译主程序
-            meson compile -C build src/main/iptux
+            meson compile -C build
 
             # 复制构建产物
-            cp build/src/main/iptux /artifacts/iptux-${{ matrix.arch }}
+            cp build /artifacts/iptux-${{ matrix.arch }}
 
   build-on-mac:
     if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos'
@@ -92,7 +92,7 @@ jobs:
               -Dwarning_level=0
 
           # 编译主程序
-          meson compile -C build src/main/iptux
+          meson compile -C build
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
