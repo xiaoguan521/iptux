@@ -52,7 +52,7 @@ jobs:
           run: |
             CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
             CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-            meson setup build
+            meson setup build -Dtests=disabled
             meson compile -C build
             # 复制构建产物到 artifacts 目录
             cp build/src/main/iptux /artifacts/iptux-${{ matrix.arch }}
@@ -81,7 +81,7 @@ jobs:
         run: |
           CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
           CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -D_GLIBCXX_USE_CXX11_ABI=0" \
-          meson setup build
+          meson setup build -Dtests=disabled
           meson compile -C build
           
       - name: Upload artifacts
