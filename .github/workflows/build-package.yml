@@ -33,7 +33,7 @@ jobs:
     strategy:
       matrix:
         arch: [aarch64]
-        distro: [ubuntu22.04]
+        distro: [ubuntu20.04]
     steps:
       - uses: actions/checkout@v4
       - uses: uraimo/run-on-arch-action@v2
@@ -50,24 +50,21 @@ jobs:
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
           run: |
-            # 使用与本地兼容的编译选项，并禁用测试
-            CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
-            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+            # 使用特定版本的编译选项
+            CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_58 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_58" \
+            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_58 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_58" \
             meson setup build \
                 --default-library=static \
                 -Db_coverage=false \
                 -Dwerror=false \
-                -Dbuildtype=release
+                -Dbuildtype=release \
+                -Dwarning_level=0
 
-            # 编译主程序，跳过测试
+            # 编译主程序
             meson compile -C build src/main/iptux
-            
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: iptux-${{ matrix.arch }}
-          path: artifacts/iptux-*
-          retention-days: 7
+
+            # 复制构建产物
+            cp build/src/main/iptux /artifacts/iptux-${{ matrix.arch }}
 
   build-on-mac:
     if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos'
@@ -84,16 +81,17 @@ jobs:
         run: brew install --display-times ${{ env.MAC_PKGS }}
       - name: Build
         run: |
-          # 使用与本地兼容的编译选项，并禁用测试
-          CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
-          CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare" \
+          # 使用更多的警告忽略选项
+          CFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare -Wno-deprecated-declarations -Wno-cast-function-type" \
+          CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -Wno-sign-compare -Wno-deprecated-declarations -Wno-cast-function-type" \
           meson setup build \
               --default-library=static \
               -Db_coverage=false \
               -Dwerror=false \
-              -Dbuildtype=release
+              -Dbuildtype=release \
+              -Dwarning_level=0
 
-          # 编译主程序，跳过测试
+          # 编译主程序
           meson compile -C build src/main/iptux
           
       - name: Upload artifacts
