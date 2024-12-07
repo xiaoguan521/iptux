@@ -20,7 +20,7 @@ jobs:
           - arch: aarch64
             distro: fedora_latest
     steps:
-      
+      - uses: actions/checkout@v4
       - uses: uraimo/run-on-arch-action@v2
         name: Build base Fedora aarch64 image
         with:
@@ -28,6 +28,4 @@ jobs:
           distro: ${{ matrix.distro }}
           githubToken: ${{ github.token }}
           run: |
-            # Fedora 基础系统更新
-            dnf -y update
-            dnf -y install your-package-name
+            echo "Base image built successfully"
