@@ -1,0 +1,33 @@
+name: build-centos
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '选择构建平台'
+        required: true
+        default: 'cross-platform'
+        type: choice
+        options:
+          - cross-platform
+
+jobs:
+  build-cross-platform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: fedora_latest
+    steps:
+      
+      - uses: uraimo/run-on-arch-action@v2
+        name: Build base Fedora aarch64 image
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+          githubToken: ${{ github.token }}
+          run: |
+            # Fedora 基础系统更新
+            dnf -y update
+            dnf -y install your-package-name
