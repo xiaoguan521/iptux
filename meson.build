@@ -1,6 +1,6 @@
 project('iptux', 'cpp',
     license: 'GPL2+',
-    version: '0.9.3',
+    version: '0.9.4',
     meson_version: '>=0.53',
     default_options: ['warning_level=3', 'cpp_std=c++14'])
 add_global_arguments('-Werror=format', language : 'cpp')
@@ -9,7 +9,7 @@ if get_option('sanitize-address')
   add_project_link_arguments('-fsanitize=address', language: 'cpp')
 endif
 
-so_version = '0.9.3'
+so_version = 1
 subdir('src')
 subdir('share')
 subdir('po')
@@ -29,8 +29,6 @@ if meson.version().version_compare('>=0.57')
     'glib-2.0': glib_dep,
     'gtk+-3.0': gtk_dep,
     'jsoncpp': jsoncpp_dep,
-    'libglog': glog_dep,
-    'gflags': gflags_dep,
     'sigc++-2.0': sigc_dep,
     }
 

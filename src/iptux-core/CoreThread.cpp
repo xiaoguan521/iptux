@@ -1,6 +1,8 @@
 #include "config.h"
 #include "iptux-core/CoreThread.h"
 
+#include "Const.h"
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -11,7 +13,6 @@
 
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
-#include <glog/logging.h>
 #include <poll.h>
 #include <sys/stat.h>
 
@@ -26,6 +27,7 @@
 #include "iptux-core/internal/support.h"
 #include "iptux-utils/output.h"
 #include "iptux-utils/utils.h"
+#include <unistd.h>
 
 using namespace std;
 using namespace std::placeholders;
@@ -44,22 +46,25 @@ void init_iptux_environment() {
 
   env = g_get_user_cache_dir();
   if (access(env, F_OK) != 0)
-    g_mkdir(env, 0777);
+    g_mkdir(env, 0755);
   snprintf(path, MAX_PATHLEN, "%s" IPTUX_PATH, env);
   if (access(path, F_OK) != 0)
-    g_mkdir(path, 0777);
+    g_mkdir(path, 0755);
   snprintf(path, MAX_PATHLEN, "%s" PIC_PATH, env);
   if (access(path, F_OK) != 0)
-    g_mkdir(path, 0777);
+    g_mkdir(path, 0755);
   snprintf(path, MAX_PATHLEN, "%s" PHOTO_PATH, env);
   if (access(path, F_OK) != 0)
-    g_mkdir(path, 0777);
+    g_mkdir(path, 0755);
   snprintf(path, MAX_PATHLEN, "%s" ICON_PATH, env);
   if (access(path, F_OK) != 0)
-    g_mkdir(path, 0777);
+    g_mkdir(path, 0755);
   snprintf(path, MAX_PATHLEN, "%s" LOG_PATH, env);
   if (access(path, F_OK) != 0)
-    g_mkdir(path, 0777);
+    g_mkdir(path, 0755);
+  snprintf(path, MAX_PATHLEN, "%s" SENT_IMAGE_PATH, env);
+  if (access(path, F_OK) != 0)
+    g_mkdir(path, 0755);
 
   env = g_get_user_config_dir();
   if (access(env, F_OK) != 0)
@@ -222,7 +227,7 @@ void CoreThread::RecvUdpData(CoreThread* self) {
     if (ret == 0) {
       continue;
     }
-    CHECK(ret == 1);
+    g_assert(ret == 1);
     len = sizeof(addr);
     if ((size = recvfrom(self->udpSock, buf, MAX_UDPLEN, 0,
                          (struct sockaddr*)&addr, &len)) == -1)
@@ -252,7 +257,7 @@ void CoreThread::RecvTcpData(CoreThread* pcthrd) {
     if (ret == 0) {
       continue;
     }
-    CHECK(ret == 1);
+    g_assert(ret == 1);
     if ((subsock = accept(pcthrd->tcpSock, NULL, NULL)) == -1)
       continue;
     thread([](CoreThread* coreThread,
@@ -493,10 +498,6 @@ bool CoreThread::SendMessage(CPPalInfo pal, const ChipData& chipData) {
       }
       Command(*this).SendSublayer(sock, pal, IPTUX_MSGPICOPT, ptr);
       close(sock);  // 关闭网络套接口
-      /*/* 删除此图片 */
-      if (chipData.GetDeleteFileAfterSent()) {
-        unlink(ptr);  // 此文件已无用处
-      }
       return true;
     default:
       g_assert_not_reached();
@@ -606,9 +607,9 @@ void CoreThread::SetAccessPublicLimit(const string& val) {
 }
 
 void CoreThread::AddPrivateFile(PFileInfo file) {
-  CHECK(file);
-  CHECK(file->fileid >= MAX_SHAREDFILE);
-  CHECK(pImpl->privateFiles.count(file->fileid) == 0);
+  g_assert(file);
+  g_assert(file->fileid >= MAX_SHAREDFILE);
+  g_assert(pImpl->privateFiles.count(file->fileid) == 0);
   pImpl->privateFiles[file->fileid] = file;
 }
 

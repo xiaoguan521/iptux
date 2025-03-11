@@ -13,10 +13,10 @@
 
 ### Linux
 
-[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-white.svg)](https://snapcraft.io/iptux)
-
-* for Ubuntu 14.04, please check 0.6.x branch: https://github.com/iptux-src/iptux/tree/iptux-0-6
-* for Ubuntu 16.04, please check 0.7.x branch: https://github.com/iptux-src/iptux/tree/iptux-0-7
+<p align="center">
+  <a href="https://snapcraft.io/iptux"><img src="https://snapcraft.io/static/images/badges/en/snap-store-white.svg" height="64" alt="Get it from the Snap Store"></a>
+  <a href="https://flathub.org/apps/io.github.iptux_src.iptux"><img src="https://flathub.org/api/badge?svg&locale=en&light" height="64" alt="Get it on Flathub"></a>
+</p>
 
 ### Mac OS X
 
@@ -30,7 +30,7 @@ brew install iptux
 ### Linux (Debian and Ubuntu)
 
 ```sh
-sudo apt-get install git libgoogle-glog-dev libgtk-3-dev libglib2.0-dev libjsoncpp-dev g++ meson libsigc++-2.0-dev libayatana-appindicator3-dev appstream gettext
+sudo apt-get install git libgtk-3-dev libglib2.0-dev libjsoncpp-dev g++ meson libsigc++-2.0-dev libayatana-appindicator3-dev appstream gettext
 git clone git://github.com/iptux-src/iptux.git
 cd iptux
 meson setup build
@@ -42,7 +42,7 @@ iptux
 ### Mac OS X
 
 ```sh
-brew install meson gettext gtk+3 jsoncpp glog gtk-mac-integration libsigc++@2 appstream
+brew install meson gettext gtk+3 jsoncpp gtk-mac-integration libsigc++@2 appstream
 git clone git://github.com/iptux-src/iptux.git
 cd iptux
 meson setup build

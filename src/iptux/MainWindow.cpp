@@ -11,27 +11,22 @@
 //
 #include "config.h"
 #include "MainWindow.h"
-
-#include <cinttypes>
-#include <ctime>
-#include <glib/gi18n.h>
-#include <glog/logging.h>
-#include <string>
-#include <thread>
-
 #include "iptux-core/Const.h"
 #include "iptux-utils/output.h"
 #include "iptux-utils/utils.h"
-#include "iptux/DataSettings.h"
+#include "iptux/Application.h"
 #include "iptux/DetectPal.h"
 #include "iptux/DialogGroup.h"
 #include "iptux/DialogPeer.h"
 #include "iptux/RevisePal.h"
-#include "iptux/ShareFile.h"
 #include "iptux/UiHelper.h"
 #include "iptux/UiModels.h"
 #include "iptux/callback.h"
 #include "iptux/dialog.h"
+#include <ctime>
+#include <glib/gi18n.h>
+#include <string>
+#include <thread>
 
 using namespace std;
 
@@ -50,6 +45,23 @@ static const char* config_names[] = {
     [CFG_SORT_TYPE] = "mwin_sort_type",
     [CFG_INFO_STYLE] = "mwin_info_style",
 };
+
+static void main_window_on_state_event(GtkWidget* self,
+                                       GdkEvent* event,
+                                       gpointer user_data) {
+  GdkWindowState event_state = event->window_state.new_window_state;
+  MainWindow* mwin = (MainWindow*)user_data;
+  auto progdt = mwin->getApp()->getProgramData();
+
+  if (!progdt->isHideTaskbarWhenMainWindowIconified())
+    return;
+
+  if (event_state & GDK_WINDOW_STATE_ICONIFIED) {
+    gtk_window_set_skip_taskbar_hint(GTK_WINDOW(self), TRUE);
+  } else {
+    gtk_window_set_skip_taskbar_hint(GTK_WINDOW(self), FALSE);
+  }
+}
 
 /**
  * 类构造函数.
@@ -409,7 +421,7 @@ void MainWindow::InitSublayer() {
   g_datalist_init(&widset);
   g_datalist_init(&mdlset);
 
-  CHECK_EQ(int(timerid), 0);
+  g_assert(int(timerid) == 0);
   timerid = g_timeout_add_seconds(1, GSourceFunc(UpdateUI), this);
 
   model = palTreeModelNew(sort_key_, sort_type_);
@@ -482,6 +494,8 @@ GtkWidget* MainWindow::CreateMainWindow() {
                    this);
   g_signal_connect(window, "delete-event",
                    G_CALLBACK(gtk_window_iconify_on_delete), nullptr);
+  g_signal_connect(window, "window-state-event",
+                   G_CALLBACK(main_window_on_state_event), this);
   return window;
 }
 
@@ -1369,32 +1383,35 @@ void MainWindow::onFind(void*, void*, MainWindow& self) {
 }
 
 void MainWindow::onDeletePal(void*, void*, MainWindow& self) {
-  GroupInfo* groupInfo = CHECK_NOTNULL(self.currentGroupInfo);
+  g_assert(self.currentGroupInfo);
+  GroupInfo* groupInfo = self.currentGroupInfo;
   switch (groupInfo->getType()) {
     case GROUP_BELONG_TYPE_REGULAR:
       self.DeletePalItem(groupInfo);
       break;
     default:
-      CHECK(false);
+      g_assert(false);
       break;
   }
 }
 
 void MainWindow::onPalChangeInfo(void*, void*, MainWindow& self) {
-  GroupInfo* groupInfo = CHECK_NOTNULL(self.currentGroupInfo);
+  g_assert(self.currentGroupInfo);
+  GroupInfo* groupInfo = self.currentGroupInfo;
   switch (groupInfo->getType()) {
     case GROUP_BELONG_TYPE_REGULAR:
       RevisePal::ReviseEntry(self.app, GTK_WINDOW(self.window),
                              groupInfo->getMembers()[0].get());
       break;
     default:
-      CHECK(false);
+      g_assert(false);
       break;
   }
 }
 
 void MainWindow::onPalSendMessage(void*, void*, MainWindow& self) {
-  GroupInfo* groupInfo = CHECK_NOTNULL(self.currentGroupInfo);
+  g_assert(self.currentGroupInfo);
+  GroupInfo* groupInfo = self.currentGroupInfo;
   if (groupInfo->getDialog()) {
     gtk_window_present(GTK_WINDOW(groupInfo->getDialog()));
     return;
@@ -1409,18 +1426,19 @@ void MainWindow::onPalSendMessage(void*, void*, MainWindow& self) {
       DialogGroup::GroupDialogEntry(self.app, groupInfo);
       break;
     default:
-      CHECK(false);
+      g_assert(false);
       break;
   }
 }
 void MainWindow::onPalRequestSharedResources(void*, void*, MainWindow& self) {
-  GroupInfo* groupInfo = CHECK_NOTNULL(self.currentGroupInfo);
+  g_assert(self.currentGroupInfo);
+  GroupInfo* groupInfo = self.currentGroupInfo;
   switch (groupInfo->getType()) {
     case GROUP_BELONG_TYPE_REGULAR:
       self.coreThread.SendAskShared(groupInfo->getMembers()[0]);
       break;
     default:
-      CHECK(false);
+      g_assert(false);
       break;
   }
 }
@@ -1730,7 +1748,7 @@ void MainWindow::ProcessEvent(shared_ptr<const Event> _event) {
 
   if (type == EventType::NEW_SHARE_FILE_FROM_FRIEND) {
     auto event = dynamic_cast<const NewShareFileFromFriendEvent*>(_event.get());
-    CHECK_NOTNULL(event);
+    g_assert(event);
     auto file = new FileInfo(event->GetFileInfo());
     coreThread.PushItemToEnclosureList(file);
     return;
@@ -1740,7 +1758,7 @@ void MainWindow::ProcessEvent(shared_ptr<const Event> _event) {
 }
 
 void MainWindow::setCurrentGroupInfo(GroupInfo* groupInfo) {
-  this->currentGroupInfo = CHECK_NOTNULL(groupInfo);
+  this->currentGroupInfo = groupInfo;
   switch (currentGroupInfo->getType()) {
     case GROUP_BELONG_TYPE_REGULAR:
       g_action_map_enable_actions(G_ACTION_MAP(window), "pal.send_message",

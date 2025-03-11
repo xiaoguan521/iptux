@@ -1,7 +1,5 @@
 gtk_dep = dependency('gtk+-3.0', version: '>=3.22')
 jsoncpp_dep = dependency('jsoncpp', version: '>=1.0')
-glog_dep = dependency('libglog')
-gflags_dep = dependency('gflags')
 sigc_dep = dependency('sigc++-2.0')
 
 sources = files([
@@ -26,9 +24,8 @@ sources = files([
     'UiModels.cpp',
     'WindowConfig.cpp',
 ])
-dependencies = [gtk_dep, jsoncpp_dep, glog_dep, gflags_dep, sigc_dep]
+dependencies = [gtk_dep, jsoncpp_dep, sigc_dep]
 
-appindicator_dep = dependency('ayatana-appindicator3-0.1', required: get_option('appindicator'))
 if appindicator_dep.found()
     sources += ['AppIndicator.cpp']
     dependencies += [appindicator_dep]
@@ -117,7 +114,9 @@ test_sources += [iptux_resource_h]
 libiptux_test = executable('libiptux_test',
     test_sources,
     dependencies: [gtk_dep, jsoncpp_dep, thread_dep, sigc_dep],
+    cpp_args: ['-fno-lto'], # https://github.com/iptux-src/iptux/issues/651
     link_with: [libiptux, libgtest,libiptux_core_test_helper],
+    link_args: ['-fno-lto'],
     include_directories: [inc, gtest_inc]
 )
 

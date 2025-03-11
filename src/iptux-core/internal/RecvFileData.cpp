@@ -15,7 +15,6 @@
 #include <memory>
 
 #include <fcntl.h>
-#include <glog/logging.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -55,7 +54,7 @@ RecvFileData::~RecvFileData() {}
  * 接收文件数据入口.
  */
 void RecvFileData::RecvFileDataEntry() {
-  CHECK(GetTaskId() > 0);
+  g_assert(GetTaskId() > 0);
 
   CreateUIPara();
   coreThread->emitEvent(make_shared<RecvFileStartedEvent>(GetTaskId()));
@@ -214,7 +213,7 @@ void RecvFileData::RecvDirFiles() {
   }
   /* 转到文件存档目录 */
   g_free(ipmsg_get_filename_me(file->filepath, &pathname));
-  afs.mkdir(pathname, 0777);
+  afs.makeDir(pathname, 0777);
   afs.chdir(pathname);
   g_free(pathname);
 
@@ -267,7 +266,7 @@ void RecvFileData::RecvDirFiles() {
         }
         continue;
       case IPMSG_FILE_DIR:
-        afs.mkdir(dirname, 0777);
+        afs.makeDir(dirname, 0777);
         afs.chdir(dirname);
         if (len)
           memmove(buf, buf + headsize, len);

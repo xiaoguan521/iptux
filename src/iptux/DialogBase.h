@@ -30,6 +30,7 @@ class DialogBase : public SessionAbstract, public sigc::trackable {
 
   virtual GtkWindow* getWindow() = 0;
   void ClearHistoryTextView();
+  void onChatHistoryInsertChildAnchor(GtkTextChildAnchor* anchor);
 
  protected:
   void InitSublayerGeneral();
@@ -59,6 +60,7 @@ class DialogBase : public SessionAbstract, public sigc::trackable {
   /* TODO: Group SendTextMsg need add Picture */
   void FeedbackMsg(const gchar* msg);
   virtual void BroadcastEnclosureMsg(const std::vector<FileInfo*>& files) = 0;
+  virtual void populateInputPopup(GtkMenu* popup){};
 
   // 回调部分
   static void DialogDestory(DialogBase*);
@@ -84,13 +86,12 @@ class DialogBase : public SessionAbstract, public sigc::trackable {
   static gboolean UpdateFileSendUI(DialogBase* dlggrp);
   static void RemoveSelectedEnclosure(DialogBase* self);
   static void OnPasteClipboard(DialogBase* self, GtkTextView* textview);
+  static void onInputPopulatePopup(DialogBase* self,
+                                   GtkWidget* popup,
+                                   GtkTextView* textview);
   static gboolean OnImageButtonPress(DialogBase* self,
                                      GdkEventButton* event,
                                      GtkEventBox* eventbox);
-  static void OnChatHistoryInsertChildAnchor(DialogBase* self,
-                                             const GtkTextIter* location,
-                                             GtkTextChildAnchor* anchor,
-                                             GtkTextBuffer* buffer);
   static void OnSaveImage(DialogBase* self);
   static void OnCopyImage(DialogBase* self);
 
