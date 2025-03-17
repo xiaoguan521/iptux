@@ -17,6 +17,7 @@ env:
   DEB_PKGS: >-
     g++ meson ninja-build appstream gettext libgoogle-glog-dev libgtk-3-dev libglib2.0-dev
     libjsoncpp-dev libsigc++-2.0-dev libayatana-appindicator3-dev
+  APP_VERSION: 0.9.4
 
 jobs:
   docker-cross-compile:
@@ -38,17 +39,21 @@ jobs:
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/arm64"
             CROSS_ARCH="arm64"
+            DEB_ARCH="arm64"
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/arm/v7"
             CROSS_ARCH="armhf" 
+            DEB_ARCH="armhf"
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/riscv64"
             CROSS_ARCH="riscv64"
+            DEB_ARCH="riscv64"
           fi
           
           echo "使用镜像: $DOCKER_IMAGE 平台: $DOCKER_PLATFORM"
+          echo "DEB_ARCH=$DEB_ARCH" >> $GITHUB_ENV
           
           # 预先拉取镜像以验证Docker运行正常
           echo "预拉取Docker镜像..."
@@ -116,19 +121,89 @@ jobs:
             exit 1
           fi
           
-      - name: Create deployment package
+      - name: Create Debian Package
         run: |
-          echo "创建部署包..."
-          # 检查pkg目录是否存在
-          if [ ! -d "pkg" ]; then
-            echo "错误：pkg目录不存在，无法创建部署包"
-            mkdir -p pkg
-            echo "已创建空的pkg目录"
+          echo "开始创建Debian软件包..."
+          
+          # 设置Debian包目录结构
+          mkdir -p debian-pkg/DEBIAN
+          
+          # 复制编译好的文件到debian-pkg中
+          cp -r pkg/usr debian-pkg/
+          
+          # 检查Debian包内容
+          echo "Debian包内容:"
+          find debian-pkg -type f | grep -v "\.a$" | head -20
+          
+          # 创建control文件
+          cat > debian-pkg/DEBIAN/control << EOF
+          Package: iptux
+          Version: ${{ env.APP_VERSION }}
+          Section: net
+          Priority: optional
+          Architecture: ${{ env.DEB_ARCH }}
+          Maintainer: IPTUX Team <example@example.com>
+          Description: IP Messenger client for Linux
+           IPTUX is an IP Messenger client for Linux. It is compatible with
+           IPMsg, a popular message client in China.
+           
+           IPTUX provides command line and GTK+ interfaces for users to send
+           messages, files, and directories to other users. It can also detect
+           and recognize other IPTUX/IPMsg users automatically in LAN.
+          Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1
+          EOF
+          
+          # 创建postinst脚本
+          cat > debian-pkg/DEBIAN/postinst << 'EOF'
+          #!/bin/sh
+          set -e
+          
+          # 更新共享库缓存
+          ldconfig
+          
+          # 更新桌面菜单数据库
+          if [ -x /usr/bin/update-desktop-database ]; then
+            update-desktop-database -q || true
           fi
           
-          # 检查安装包内容
-          echo "安装包内容:"
-          find pkg -type f | grep -v "\.a$" | head -20
+          # 更新图标缓存
+          if [ -x /usr/bin/gtk-update-icon-cache ]; then
+            gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor || true
+          fi
+          
+          exit 0
+          EOF
+          
+          # 创建postrm脚本
+          cat > debian-pkg/DEBIAN/postrm << 'EOF'
+          #!/bin/sh
+          set -e
+          
+          # 更新桌面菜单数据库
+          if [ -x /usr/bin/update-desktop-database ]; then
+            update-desktop-database -q || true
+          fi
+          
+          # 更新图标缓存
+          if [ -x /usr/bin/gtk-update-icon-cache ]; then
+            gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor || true
+          fi
+          
+          exit 0
+          EOF
+          
+          # 设置权限
+          chmod 755 debian-pkg/DEBIAN/postinst
+          chmod 755 debian-pkg/DEBIAN/postrm
+          
+          # 创建Debian包
+          dpkg-deb --build --root-owner-group debian-pkg
+          
+          # 重命名Debian包
+          mv debian-pkg.deb iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
+          
+          # 为了保持兼容性，仍然创建传统的部署包
+          echo "创建传统部署包..."
           
           # 创建部署脚本
           cat > install.sh << 'EOF'
@@ -200,7 +275,12 @@ jobs:
           cat > README.md << EOF
           # iptux ${{ github.event.inputs.target_arch }} 安装指南
           
-          ## 安装方法
+          ## Debian包安装方法（推荐）
+          
+          1. 下载Debian包：\`iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb\`
+          2. 安装命令：\`sudo apt install ./iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb\`
+          
+          ## 手动安装方法
           
           1. 解压安装包: \`tar xzf iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz\`
           2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
@@ -211,29 +291,25 @@ jobs:
           
           如果遇到"共享库缺失"的错误，请确保已安装所有dependencies.txt中列出的依赖。
           
-          ## 手动安装方法
+          ## 手动卸载
           
-          如果安装脚本不能正常工作，您可以手动安装:
-          
+          如果使用手动安装方法，卸载命令：
           \`\`\`bash
-          sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/share
-          sudo cp -r usr/local/bin/* /usr/local/bin/ 2>/dev/null || true
-          sudo cp -r usr/local/lib/* /usr/local/lib/ 2>/dev/null || true
-          sudo cp -r usr/local/share/* /usr/local/share/ 2>/dev/null || true
-          sudo cp -r usr/bin/* /usr/local/bin/ 2>/dev/null || true
-          sudo cp -r usr/lib/* /usr/local/lib/ 2>/dev/null || true
-          sudo cp -r usr/share/* /usr/local/share/ 2>/dev/null || true
-          sudo find /usr/local/bin -type f -exec chmod +x {} \; 2>/dev/null
-          sudo ldconfig
+          sudo rm -f /usr/local/bin/iptux
+          sudo rm -f /usr/local/lib/libiptux*
+          sudo rm -rf /usr/local/share/iptux
           \`\`\`
+          
+          若使用Debian包安装，卸载命令：\`sudo apt remove iptux\`
           EOF
           
           # 打包所有文件
           mkdir -p deploy
           cp -r pkg/* deploy/ 2>/dev/null || echo "警告：pkg目录复制失败或为空"
           cp install.sh dependencies.txt README.md deploy/
+          cp iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb deploy/
           
-          # 打包为tar.gz
+          # 创建tar.gz包
           cd deploy
           tar czf ../iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz *
           cd ..
@@ -245,4 +321,5 @@ jobs:
           path: |
             deploy/
             iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
+            iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
           retention-days: 7 

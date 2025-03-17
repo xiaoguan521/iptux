@@ -81,22 +81,76 @@ jobs:
             aarch64-linux-gnu-gcc --version
             aarch64-linux-gnu-g++ --version
             
-            # 尝试安装依赖库
-            echo "尝试安装 ARM64 架构依赖库..."
-            sudo apt-get install -y libglib2.0-dev:arm64 libgtk-3-dev:arm64 || echo "ARM64依赖库安装失败，但将继续执行"
+            # 安装所有关键依赖的ARM64版本
+            echo "安装 ARM64 架构依赖库..."
+            sudo apt-get install -y --no-install-recommends \
+              libglib2.0-dev:arm64 \
+              libgtk-3-dev:arm64 \
+              libjsoncpp-dev:arm64 \
+              libsigc++-2.0-dev:arm64 \
+              libgoogle-glog-dev:arm64 \
+              libayatana-appindicator3-dev:arm64 \
+              || echo "某些ARM64依赖库安装失败，但将继续执行"
+              
             sudo apt-get install -y crossbuild-essential-arm64 || echo "crossbuild-essential安装失败，但将继续执行"
             
-            echo "CROSS_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
-            # 备用方案：已知某些包已经包含了lib文件
-            echo "使用本地库文件和头文件..."
+            # 创建pkgconfig符号链接以确保能找到arm64架构的.pc文件
+            echo "配置pkg-config以查找ARM64库..."
+            sudo mkdir -p /usr/share/pkgconfig-arm64
+            sudo find /usr/lib/aarch64-linux-gnu/pkgconfig -name "*.pc" -exec ln -sf {} /usr/share/pkgconfig-arm64/ \;
             
+            # 设置环境变量
             echo "CROSS_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
-            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig-arm64:/usr/share/pkgconfig" >> $GITHUB_ENV
+            echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig-arm64:/usr/share/pkgconfig" >> $GITHUB_ENV
+            
+            # 创建jsoncpp的特殊配置，确保能找到它
+            echo "创建特定的pkg-config配置文件..."
+            if [ -f "/usr/lib/aarch64-linux-gnu/pkgconfig/jsoncpp.pc" ]; then
+              sudo cp /usr/lib/aarch64-linux-gnu/pkgconfig/jsoncpp.pc /usr/share/pkgconfig-arm64/
+              echo "已复制 jsoncpp.pc 到共享目录"
+            else
+              # 如果没有找到jsoncpp.pc，手动创建一个
+              echo "未找到jsoncpp.pc，创建一个临时版本..."
+              cat > jsoncpp.pc << EOF
+Name: jsoncpp
+Description: A JSON implementation in C++
+Version: 1.9.5
+Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
+Cflags: -I/usr/include/jsoncpp
+EOF
+              sudo cp jsoncpp.pc /usr/share/pkgconfig-arm64/
+            fi
+            
+            # 显示环境信息
+            echo "pkg-config可用的库:"
+            PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig-arm64:/usr/share/pkgconfig" pkg-config --list-all | grep -i json || true
+            
+            # 直接修复pkg-config问题的备用方法
+            echo "PKG_CONFIG_ALLOW_SYSTEM_LIBS=1" >> $GITHUB_ENV
+            echo "PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
             sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            sudo apt-get install -y libglib2.0-dev:armhf libgtk-3-dev:armhf || true
+            
+            # 安装所有依赖的ARMHF版本
+            sudo apt-get install -y --no-install-recommends \
+              libglib2.0-dev:armhf \
+              libgtk-3-dev:armhf \
+              libjsoncpp-dev:armhf \
+              libsigc++-2.0-dev:armhf \
+              libgoogle-glog-dev:armhf \
+              libayatana-appindicator3-dev:armhf \
+              || echo "某些ARMHF依赖库安装失败，但将继续执行"
+            
+            # 创建pkgconfig符号链接
+            sudo mkdir -p /usr/share/pkgconfig-armhf
+            sudo find /usr/lib/arm-linux-gnueabihf/pkgconfig -name "*.pc" -exec ln -sf {} /usr/share/pkgconfig-armhf/ \;
+            
             echo "CROSS_TRIPLE=arm-linux-gnueabihf" >> $GITHUB_ENV
-            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig-armhf:/usr/share/pkgconfig" >> $GITHUB_ENV
+            echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig-armhf:/usr/share/pkgconfig" >> $GITHUB_ENV
+            echo "PKG_CONFIG_ALLOW_SYSTEM_LIBS=1" >> $GITHUB_ENV
+            echo "PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
             # RISC-V 可能需要其他方法
@@ -110,7 +164,7 @@ jobs:
           
           # 先设置变量便于替换
           CROSS_SYS_ROOT="/usr/${{ env.CROSS_TRIPLE }}"
-          CROSS_PKG_CONFIG_LIBDIR="/usr/lib/${{ env.CROSS_TRIPLE }}/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
+          CROSS_PKG_CONFIG_LIBDIR="${{ env.CROSS_PKG_CONFIG_PATH }}"
           
           cat > cross-files/${{ github.event.inputs.target_arch }}.txt << EOF
           [binaries]
@@ -150,31 +204,71 @@ jobs:
           echo "目标架构: ${{ github.event.inputs.target_arch }}"
           echo "编译器: ${{ env.CROSS_TRIPLE }}-gcc"
           echo "pkg-config路径: ${{ env.CROSS_PKG_CONFIG_PATH }}"
+          echo "PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH }}"
           echo "交叉编译配置文件内容:"
           cat cross-files/${{ github.event.inputs.target_arch }}.txt
+          
+          # 测试pkg-config能否找到关键依赖
+          echo "测试pkg-config是否能找到jsoncpp:"
+          PKG_CONFIG_PATH="${{ env.PKG_CONFIG_PATH }}" pkg-config --exists --print-errors jsoncpp || echo "警告: pkg-config无法找到jsoncpp，但将继续尝试"
+          
+          echo "测试pkg-config是否能找到glib-2.0:"
+          PKG_CONFIG_PATH="${{ env.PKG_CONFIG_PATH }}" pkg-config --exists --print-errors glib-2.0 || echo "警告: pkg-config无法找到glib-2.0，但将继续尝试"
           echo "=========================="
           
           # 检查编译器可用性
           which ${{ env.CROSS_TRIPLE }}-gcc || { echo "错误: 找不到 ${{ env.CROSS_TRIPLE }}-gcc"; exit 1; }
           which ${{ env.CROSS_TRIPLE }}-g++ || { echo "错误: 找不到 ${{ env.CROSS_TRIPLE }}-g++"; exit 1; }
           
+          # 创建自定义jsoncpp查找模块
+          mkdir -p $(pwd)/meson_modules
+          cat > $(pwd)/meson_modules/FindJsoncpp.cmake << 'EOF'
+          set(JSONCPP_INCLUDE_DIRS /usr/include/jsoncpp)
+          set(JSONCPP_LIBRARIES jsoncpp)
+          set(JSONCPP_FOUND TRUE)
+          EOF
+          
+          # 设置环境变量以处理特殊依赖
+          export PKG_CONFIG_PATH="${{ env.PKG_CONFIG_PATH }}"
+          export CMAKE_PREFIX_PATH="$(pwd)/meson_modules:$CMAKE_PREFIX_PATH"
+          
+          # 导出一些调试信息
+          export MESON_DEBUG=1
+          
           # 配置构建 - 使用基本配置，不包括未知选项
+          MESON_ARGS="--buildtype=release -Db_lto=false"
+          
+          echo "运行第一次尝试配置..."
           meson setup build \
             --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
-            --buildtype=release \
-            -Db_lto=false \
+            $MESON_ARGS \
             -Dauto_features=disabled || \
-          # 如果失败，尝试使用静态库
-          meson setup build \
-            --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
-            --buildtype=release \
-            -Db_lto=false \
-            -Ddefault_library=static \
-            -Dauto_features=disabled || \
-          # 最终尝试：使用wipe选项重建
-          meson setup --wipe build \
-            --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
-            --buildtype=release
+          {
+            echo "第一次尝试失败，使用静态库尝试..."
+            meson setup build \
+              --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
+              $MESON_ARGS \
+              -Ddefault_library=static \
+              -Dauto_features=disabled || \
+            {
+              echo "第二次尝试失败，尝试手动指定依赖..."
+              # 如果jsoncpp相关选项可用，添加自定义路径
+              meson setup --wipe build \
+                --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
+                $MESON_ARGS \
+                -Dauto_features=disabled \
+                -Dc_args="-I/usr/include/jsoncpp" \
+                -Dc_link_args="-ljsoncpp" \
+                -Dcpp_args="-I/usr/include/jsoncpp" \
+                -Dcpp_link_args="-ljsoncpp" \
+                || {
+                  echo "第三次尝试失败，尝试使用最小化配置..."
+                  meson setup --wipe build \
+                    --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
+                    --buildtype=release
+                }
+            }
+          }
       
       - name: Build
         run: |
