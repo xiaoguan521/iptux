@@ -86,10 +86,10 @@ jobs:
             which meson || { echo '错误：meson 未找到'; exit 1; }
             
             # 创建降低优化级别的meson_options.txt
-            cat > meson_options.txt << 'EOF'
-option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
-option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
-EOF
+            cat > meson_options.txt <<-'EOF'
+            option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
+            option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
+            EOF
             
             # 配置项目
             meson setup build \
@@ -126,6 +126,16 @@ EOF
                 chmod +x /workspace/pkg/usr/bin/iptux
               fi
             }
+            
+            # 如果没有找到jsoncpp.pc，手动创建一个
+            echo "未找到jsoncpp.pc，创建一个临时版本..."
+            cat > jsoncpp.pc <<-EOF
+            Name: jsoncpp
+            Description: A JSON implementation in C++
+            Version: 1.9.5
+            Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
+            Cflags: -I/usr/include/jsoncpp
+            EOF
           "
           
           # 检查编译结果
@@ -149,7 +159,7 @@ EOF
           cp -r pkg/usr debian-pkg/
           
           # 创建control文件
-          cat > debian-pkg/DEBIAN/control << EOF
+          cat > debian-pkg/DEBIAN/control <<-EOF
           Package: iptux
           Version: ${{ env.APP_VERSION }}
           Section: net
@@ -163,7 +173,7 @@ EOF
           EOF
           
           # 创建postinst脚本
-          cat > debian-pkg/DEBIAN/postinst << 'EOF'
+          cat > debian-pkg/DEBIAN/postinst <<-'EOF'
           #!/bin/sh
           set -e
           
@@ -179,7 +189,7 @@ EOF
           EOF
           
           # 创建postrm脚本
-          cat > debian-pkg/DEBIAN/postrm << 'EOF'
+          cat > debian-pkg/DEBIAN/postrm <<-'EOF'
           #!/bin/sh
           set -e
           
@@ -206,7 +216,7 @@ EOF
           cp -r pkg/* deploy/ 2>/dev/null || true
           
           # 添加安装脚本
-          cat > deploy/install.sh << 'EOF'
+          cat > deploy/install.sh <<-'EOF'
           #!/bin/bash
           # iptux 安装脚本
           
@@ -242,7 +252,7 @@ EOF
           chmod +x deploy/install.sh
           
           # 创建README
-          cat > deploy/README.md << EOF
+          cat > deploy/README.md <<-EOF
           # iptux ${{ github.event.inputs.target_arch }} 安装指南
           
           ## Debian包安装方法（推荐）
@@ -253,10 +263,11 @@ EOF
           
           ## 手动安装方法
           
-          1. 解压tar包
-          2. 运行: \`sudo ./install.sh\`
+          1. 解压安装包: \`tar xzf iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz\`
+          2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
+          3. 以root权限运行安装脚本: \`sudo ./install.sh\`
           
-          ## 依赖
+          ## 所需依赖
           
           - libgtk-3-0
           - libglib2.0-0
