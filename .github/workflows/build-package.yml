@@ -47,6 +47,8 @@ jobs:
             mkdir -p "${PWD}/artifacts"
           dockerRunArgs: |
             --volume "${PWD}/artifacts:/artifacts"
+            --memory=4g
+            --memory-swap=4g
           install: |
             apt-get update -q -y
             apt-get install -q -y ${{ env.DEB_PKGS }}
