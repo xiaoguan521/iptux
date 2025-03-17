@@ -1,4 +1,4 @@
-name: Docker ARM64 交叉编译
+name: docker Cross Compile
 
 on:
   workflow_dispatch:
