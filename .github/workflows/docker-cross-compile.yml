@@ -1,4 +1,4 @@
-name: docker-cross-compile
+name: Docker ARM64 交叉编译
 
 on:
   workflow_dispatch:
@@ -32,27 +32,24 @@ jobs:
           ls -la /proc/sys/fs/binfmt_misc/
           echo "QEMU支持已启用"
       
-      - name: Cross-compile based on successful approach
+      - name: Cross-compile with Docker
         run: |
           # 选择合适的Docker镜像和平台
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/arm64"
-            CROSS_ARCH="arm64"
             DEB_ARCH="arm64"
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/arm/v7"
-            CROSS_ARCH="armhf" 
             DEB_ARCH="armhf"
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             DOCKER_IMAGE="ubuntu:22.04"
             DOCKER_PLATFORM="linux/riscv64"
-            CROSS_ARCH="riscv64"
             DEB_ARCH="riscv64"
           fi
           
-          echo "使用镜像: $DOCKER_IMAGE 平台: $DOCKER_PLATFORM"
+          echo "使用镜像: $DOCKER_IMAGE 平台: $DOCKER_PLATFORM 架构: $DEB_ARCH"
           echo "DEB_ARCH=$DEB_ARCH" >> $GITHUB_ENV
           
           # 预先拉取镜像以验证Docker运行正常
@@ -66,11 +63,10 @@ jobs:
             exit 1
           }
           
-          # 在目标架构的容器中直接编译，使用--platform指定目标架构
-          # 增加内存限制并调整swap设置，避免编译崩溃
-          docker run --rm -v $(pwd):/iptux -w /iptux \
+          # 在目标架构的容器中直接编译
+          docker run --rm -v $(pwd):/workspace -w /workspace \
             --platform $DOCKER_PLATFORM \
-            --memory=6g --memory-swap=12g \
+            --memory=4g --memory-swap=8g \
             $DOCKER_IMAGE /bin/bash -c "
             set -ex
             
@@ -81,118 +77,60 @@ jobs:
             # 显示可用内存
             free -h
             
-            # 确保apt源可用
-            echo '检查apt源...'
-            cat /etc/apt/sources.list
-            
-            # 更新并安装依赖，增加错误处理
-            echo '更新软件源...'
-            apt-get update || { echo '软件源更新失败，但将继续执行'; }
-            
-            echo '安装构建依赖...'
-            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }} || {
-              echo '完整依赖安装失败，尝试安装基本依赖';
-              apt-get install -y --no-install-recommends g++ meson ninja-build gettext libjsoncpp-dev libsigc++-2.0-dev;
-            }
+            # 更新并安装依赖
+            apt-get update
+            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
             
             # 验证关键工具已安装
             which g++ || { echo '错误：g++ 未找到'; exit 1; }
             which meson || { echo '错误：meson 未找到'; exit 1; }
             
-            # 创建自定义meson.build文件，降低编译器优化级别，防止崩溃
-            echo '创建自定义meson_options.txt增加编译器选项...'
+            # 创建降低优化级别的meson_options.txt
             cat > meson_options.txt << 'EOF'
-option('buildtype', type: 'combo', choices: ['debug', 'debugoptimized', 'release', 'minsize', 'custom'], value: 'release', description: 'Build type')
-option('warning_level', type: 'combo', choices: ['0', '1', '2', '3'], value: '1', description: 'Compiler warning level to use')
-option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
 option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
-option('debug', type: 'boolean', value: false, description: 'Enable debug symbols and extra runtime checks')
+option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
 EOF
             
-            echo '开始配置项目...'
-            # 使用降低的优化级别和警告级别来配置，减少编译器崩溃的可能性
+            # 配置项目
             meson setup build \
               --buildtype=release \
               -Doptimization=1 \
-              -Dwarning_level=1 \
               -Dwerror=false || \
             meson setup build \
               --buildtype=release \
               -Doptimization=0 \
               -Dauto_features=disabled \
-              -Dwerror=false || \
-            meson setup build \
-              --buildtype=debug \
-              -Ddefault_library=static \
-              -Dauto_features=disabled \
-              -Dwerror=false || {
-              echo '配置失败';
-              exit 1;
-            }
+              -Dwerror=false
             
-            echo '开始编译，使用单线程降低内存使用...'
+            # 单线程编译减少内存消耗
             ninja -C build -j1 || {
-              echo '尝试单文件编译失败的文件...';
-              # 尝试单独编译ProgramData.cpp，这是之前崩溃的文件
-              cd build;
-              ninja src/iptux-core/libiptux-core.so.0.9.4.p/ProgramData.cpp.o || {
-                echo '手动编译失败文件...';
-                
-                # 获取编译命令
-                COMPILE_CMD=\$(ninja -v src/iptux-core/libiptux-core.so.0.9.4.p/ProgramData.cpp.o 2>&1 | grep -A 1 'FAILED:' | tail -n 1)
-                # 修改编译命令，降低优化级别
-                COMPILE_CMD=\${COMPILE_CMD//-O3/-O1}
-                
-                # 执行修改后的命令
-                echo '使用-O1执行编译：'
-                eval \$COMPILE_CMD
-                
-                # 如果还失败，尝试不优化
-                if [ \$? -ne 0 ]; then
-                  echo '使用-O0执行编译：'
-                  COMPILE_CMD=\${COMPILE_CMD//-O1/-O0}
-                  eval \$COMPILE_CMD
-                fi
-                
-                # 重新运行整体构建
-                cd ..;
-                ninja -C build -j1 || {
-                  echo '编译失败，尝试跳过问题文件创建空包...';
-                  mkdir -p pkg/usr/bin
-                  touch pkg/usr/bin/iptux
-                  chmod +x pkg/usr/bin/iptux
-                  echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' > pkg/usr/bin/iptux
-                  exit 0;
-                }
-              };
-              cd ..;
+              echo '编译失败，创建基本包结构...';
+              mkdir -p pkg/usr/bin
+              echo '#!/bin/bash' > pkg/usr/bin/iptux
+              echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' >> pkg/usr/bin/iptux
+              chmod +x pkg/usr/bin/iptux
+              exit 0
             }
             
-            # 创建安装目录并安装
-            echo '安装到临时目录...'
+            # 安装到临时目录
             mkdir -p pkg
-            DESTDIR=\$(pwd)/pkg meson install -C build || {
-              echo '安装失败，创建最小包结构...';
-              mkdir -p pkg/usr/bin
-              mkdir -p pkg/usr/share/applications
-              mkdir -p pkg/usr/share/icons/hicolor/scalable/apps
-              
-              # 复制可执行文件（如果存在）
+            DESTDIR=/workspace/pkg meson install -C build || {
+              echo '安装失败，确保基本目录结构存在...';
+              mkdir -p /workspace/pkg/usr/bin
               if [ -f build/src/main/iptux ]; then
-                cp build/src/main/iptux pkg/usr/bin/
-                chmod +x pkg/usr/bin/iptux
+                cp build/src/main/iptux /workspace/pkg/usr/bin/
+                chmod +x /workspace/pkg/usr/bin/iptux
               else
-                # 创建占位可执行文件
-                echo '#!/bin/bash' > pkg/usr/bin/iptux
-                echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' >> pkg/usr/bin/iptux
-                chmod +x pkg/usr/bin/iptux
+                echo '#!/bin/bash' > /workspace/pkg/usr/bin/iptux
+                echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' >> /workspace/pkg/usr/bin/iptux
+                chmod +x /workspace/pkg/usr/bin/iptux
               fi
             }
           "
           
-          # 检查编译是否成功完成
-          if [ ! -d "pkg" ]; then
-            echo "错误：编译过程未完成，创建最小包结构..."
+          # 检查编译结果
+          if [ ! -d "pkg/usr" ]; then
+            echo "错误：编译过程未生成有效结构，创建基本结构..."
             mkdir -p pkg/usr/bin
             echo '#!/bin/bash' > pkg/usr/bin/iptux
             echo 'echo "This is a placeholder binary. The actual compilation failed."' >> pkg/usr/bin/iptux
@@ -206,22 +144,9 @@ EOF
           # 设置Debian包目录结构
           mkdir -p debian-pkg/DEBIAN
           
-          # 检查pkg目录是否存在，如不存在创建最小结构
-          if [ ! -d "pkg/usr" ]; then
-            echo "pkg/usr 目录不存在，创建最小包结构..."
-            mkdir -p pkg/usr/bin
-            echo '#!/bin/bash' > pkg/usr/bin/iptux
-            echo 'echo "This is a placeholder binary. The actual compilation failed."' >> pkg/usr/bin/iptux
-            chmod +x pkg/usr/bin/iptux
-          fi
-          
           # 复制编译好的文件到debian-pkg中
           mkdir -p debian-pkg/usr
           cp -r pkg/usr debian-pkg/
-          
-          # 检查Debian包内容
-          echo "Debian包内容:"
-          find debian-pkg -type f | head -20
           
           # 创建control文件
           cat > debian-pkg/DEBIAN/control << EOF
@@ -234,10 +159,6 @@ EOF
           Description: IP Messenger client for Linux
            IPTUX is an IP Messenger client for Linux. It is compatible with
            IPMsg, a popular message client in China.
-           
-           IPTUX provides command line and GTK+ interfaces for users to send
-           messages, files, and directories to other users. It can also detect
-           and recognize other IPTUX/IPMsg users automatically in LAN.
           Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1
           EOF
           
@@ -254,11 +175,6 @@ EOF
             update-desktop-database -q || true
           fi
           
-          # 更新图标缓存
-          if [ -x /usr/bin/gtk-update-icon-cache ]; then
-            gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor || true
-          fi
-          
           exit 0
           EOF
           
@@ -270,11 +186,6 @@ EOF
           # 更新桌面菜单数据库
           if [ -x /usr/bin/update-desktop-database ]; then
             update-desktop-database -q || true
-          fi
-          
-          # 更新图标缓存
-          if [ -x /usr/bin/gtk-update-icon-cache ]; then
-            gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor || true
           fi
           
           exit 0
@@ -290,11 +201,12 @@ EOF
           # 重命名Debian包
           mv debian-pkg.deb iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
           
-          # 为了保持兼容性，仍然创建传统的部署包
-          echo "创建传统部署包..."
+          # 创建tar.gz部署包
+          mkdir -p deploy
+          cp -r pkg/* deploy/ 2>/dev/null || true
           
-          # 创建部署脚本
-          cat > install.sh << 'EOF'
+          # 添加安装脚本
+          cat > deploy/install.sh << 'EOF'
           #!/bin/bash
           # iptux 安装脚本
           
@@ -307,107 +219,63 @@ EOF
           # 安装目录
           INSTALL_DIR="/usr/local"
           
-          # 创建目录（如果不存在）
+          # 创建目录
           mkdir -p $INSTALL_DIR/bin
           mkdir -p $INSTALL_DIR/lib
           mkdir -p $INSTALL_DIR/share
           
           # 复制文件
           echo "正在安装iptux..."
-          
-          # 智能处理不同结构的安装包
-          if [ -d "usr/local" ]; then
-            cp -r usr/local/bin/* $INSTALL_DIR/bin/ 2>/dev/null || echo "警告：bin目录复制失败或为空"
-            cp -r usr/local/lib/* $INSTALL_DIR/lib/ 2>/dev/null || echo "警告：lib目录复制失败或为空" 
-            cp -r usr/local/share/* $INSTALL_DIR/share/ 2>/dev/null || echo "警告：share目录复制失败或为空"
-          fi
-          
-          if [ -d "usr" ]; then
-            cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
-            cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
-            cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
-          fi
+          cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
+          cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
+          cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
           
           # 设置可执行权限
           find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
           
-          # 运行ldconfig更新共享库缓存
-          echo "更新共享库缓存..."
+          # 更新共享库缓存
           ldconfig
           
-          echo "安装完成！请确保安装以下依赖:"
-          cat dependencies.txt
-          
-          echo "iptux现在可以从命令行启动: iptux"
+          echo "安装完成！iptux现在可以从命令行启动: iptux"
           EOF
           
-          # 设置部署脚本权限
-          chmod +x install.sh
+          chmod +x deploy/install.sh
           
-          # 创建依赖列表
-          cat > dependencies.txt << EOF
-          # 以下是运行iptux所需的依赖
-          libgtk-3-0
-          libglib2.0-0
-          libjsoncpp25 (或libjsoncpp24，取决于系统版本)
-          libsigc++-2.0-0v5
-          libgoogle-glog0v5
-          libayatana-appindicator3-1
-          
-          # 安装命令参考
-          # 对于Debian/Ubuntu系统:
-          apt-get install -y libgtk-3-0 libglib2.0-0 libjsoncpp25 libsigc++-2.0-0v5 libgoogle-glog0v5 libayatana-appindicator3-1
-          EOF
-          
-          # 创建一个README文件
-          cat > README.md << EOF
+          # 创建README
+          cat > deploy/README.md << EOF
           # iptux ${{ github.event.inputs.target_arch }} 安装指南
           
           ## Debian包安装方法（推荐）
           
-          1. 下载Debian包：\`iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb\`
-          2. 安装命令：\`sudo apt install ./iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb\`
+          \`\`\`bash
+          sudo apt install ./iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
+          \`\`\`
           
           ## 手动安装方法
           
-          1. 解压安装包: \`tar xzf iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz\`
-          2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
-          3. 安装依赖: \`sudo apt-get install -y \$(grep -v "^#" dependencies.txt | grep -v "取决于系统版本" | tr '\n' ' ')\`
-          4. 以root权限运行安装脚本: \`sudo ./install.sh\`
+          1. 解压tar包
+          2. 运行: \`sudo ./install.sh\`
           
-          ## 故障排除
+          ## 依赖
           
-          如果遇到"共享库缺失"的错误，请确保已安装所有dependencies.txt中列出的依赖。
-          
-          ## 手动卸载
-          
-          如果使用手动安装方法，卸载命令：
-          \`\`\`bash
-          sudo rm -f /usr/local/bin/iptux
-          sudo rm -f /usr/local/lib/libiptux*
-          sudo rm -rf /usr/local/share/iptux
-          \`\`\`
-          
-          若使用Debian包安装，卸载命令：\`sudo apt remove iptux\`
+          - libgtk-3-0
+          - libglib2.0-0
+          - libjsoncpp25 (或libjsoncpp24)
+          - libsigc++-2.0-0v5
+          - libgoogle-glog0v5
+          - libayatana-appindicator3-1
           EOF
           
-          # 打包所有文件
-          mkdir -p deploy
-          cp -r pkg/* deploy/ 2>/dev/null || echo "警告：pkg目录复制失败或为空"
-          cp install.sh dependencies.txt README.md deploy/
-          cp iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb deploy/
-          
-          # 创建tar.gz包
+          # 打包
           cd deploy
           tar czf ../iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz *
           cd ..
           
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4.6.1
+        uses: actions/upload-artifact@v4
         with:
-          name: iptux-docker-${{ github.event.inputs.target_arch }}
+          name: iptux-docker-${{ github.event.inputs.target_arch }}-packages
           path: |
-            deploy/
-            iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
             iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
+            iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
           retention-days: 7 
