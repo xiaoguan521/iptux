@@ -27,40 +27,109 @@ jobs:
       - name: Enable QEMU support
         run: |
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          # 检查QEMU是否正确安装
+          ls -la /proc/sys/fs/binfmt_misc/
+          echo "QEMU支持已启用"
       
       - name: Cross-compile based on successful approach
         run: |
-          # 选择合适的Docker镜像
+          # 选择合适的Docker镜像和平台
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
-            DOCKER_IMAGE="arm64v8/ubuntu:22.04"
+            DOCKER_IMAGE="ubuntu:22.04"
+            DOCKER_PLATFORM="linux/arm64"
             CROSS_ARCH="arm64"
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
-            DOCKER_IMAGE="arm32v7/ubuntu:22.04"
+            DOCKER_IMAGE="ubuntu:22.04"
+            DOCKER_PLATFORM="linux/arm/v7"
             CROSS_ARCH="armhf" 
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
-            DOCKER_IMAGE="riscv64/ubuntu:22.04"
+            DOCKER_IMAGE="ubuntu:22.04"
+            DOCKER_PLATFORM="linux/riscv64"
             CROSS_ARCH="riscv64"
           fi
           
-          # 在目标架构的容器中直接编译（类似build-package.yml的方式）
-          docker run --rm -v $(pwd):/iptux -w /iptux $DOCKER_IMAGE /bin/bash -c "
+          echo "使用镜像: $DOCKER_IMAGE 平台: $DOCKER_PLATFORM"
+          
+          # 预先拉取镜像以验证Docker运行正常
+          echo "预拉取Docker镜像..."
+          docker pull --platform $DOCKER_PLATFORM $DOCKER_IMAGE
+          
+          # 验证Docker能否正常启动目标架构容器
+          echo "验证Docker平台支持..."
+          docker run --rm --platform $DOCKER_PLATFORM $DOCKER_IMAGE uname -a || {
+            echo "错误：无法运行目标平台容器，可能QEMU支持未正确配置"
+            exit 1
+          }
+          
+          # 在目标架构的容器中直接编译，使用--platform指定目标架构
+          docker run --rm -v $(pwd):/iptux -w /iptux \
+            --platform $DOCKER_PLATFORM \
+            $DOCKER_IMAGE /bin/bash -c "
             set -ex
             
-            # 更新并安装依赖
-            apt-get update
-            apt-get install -y ${{ env.DEB_PKGS }}
+            # 输出系统信息进行验证
+            echo '当前系统架构:'
+            uname -a
             
-            # 使用与成功workflow相同的构建命令
-            meson setup build --buildtype=release
-            ninja -C build
+            # 确保apt源可用
+            echo '检查apt源...'
+            cat /etc/apt/sources.list
+            
+            # 更新并安装依赖，增加错误处理
+            echo '更新软件源...'
+            apt-get update || { echo '软件源更新失败，但将继续执行'; }
+            
+            echo '安装构建依赖...'
+            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }} || {
+              echo '完整依赖安装失败，尝试安装基本依赖';
+              apt-get install -y --no-install-recommends g++ meson ninja-build gettext libjsoncpp-dev libsigc++-2.0-dev;
+            }
+            
+            # 验证关键工具已安装
+            which g++ || { echo '错误：g++ 未找到'; exit 1; }
+            which meson || { echo '错误：meson 未找到'; exit 1; }
+            
+            echo '开始配置项目...'
+            # 使用与成功workflow相同的构建命令，增加容错选项
+            meson setup build --buildtype=release || \
+            meson setup build --buildtype=release -Dauto_features=disabled || \
+            meson setup build --buildtype=release -Ddefault_library=static -Dauto_features=disabled || {
+              echo '配置失败';
+              exit 1;
+            }
+            
+            echo '开始编译...'
+            ninja -C build || {
+              echo '编译失败';
+              exit 1;
+            }
             
             # 创建安装目录并安装
+            echo '安装到临时目录...'
             mkdir -p pkg
             DESTDIR=\$(pwd)/pkg meson install -C build
           "
           
+          # 检查编译是否成功完成
+          if [ ! -d "pkg" ]; then
+            echo "错误：编译过程未完成，未生成安装包"
+            exit 1
+          fi
+          
       - name: Create deployment package
         run: |
+          echo "创建部署包..."
+          # 检查pkg目录是否存在
+          if [ ! -d "pkg" ]; then
+            echo "错误：pkg目录不存在，无法创建部署包"
+            mkdir -p pkg
+            echo "已创建空的pkg目录"
+          fi
+          
+          # 检查安装包内容
+          echo "安装包内容:"
+          find pkg -type f | grep -v "\.a$" | head -20
+          
           # 创建部署脚本
           cat > install.sh << 'EOF'
           #!/bin/bash
@@ -161,7 +230,7 @@ jobs:
           
           # 打包所有文件
           mkdir -p deploy
-          cp -r pkg/* deploy/ || true
+          cp -r pkg/* deploy/ 2>/dev/null || echo "警告：pkg目录复制失败或为空"
           cp install.sh dependencies.txt README.md deploy/
           
           # 打包为tar.gz

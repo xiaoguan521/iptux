@@ -35,14 +35,11 @@ jobs:
             # 添加ARM64架构
             sudo dpkg --add-architecture arm64
             
-            # 完全替换ARM64架构的软件源配置，避免从security.ubuntu.com获取包
-            sudo sh -c 'cat > /etc/apt/sources.list.d/arm64.list << EOF
-            # ARM64架构专用源，从ports.ubuntu.com获取
-            deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse
-            deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse
-            deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-backports main universe restricted multiverse
-            deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse
-            EOF'
+            # 使用单行命令创建ARM64架构的软件源配置
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-backports main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
             
             # 修改主源列表，限制为仅获取amd64的包
             sudo sed -i 's/^deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
@@ -53,14 +50,11 @@ jobs:
             # 添加ARMHF架构
             sudo dpkg --add-architecture armhf
             
-            # 完全替换ARMHF架构的软件源配置
-            sudo sh -c 'cat > /etc/apt/sources.list.d/armhf.list << EOF
-            # ARMHF架构专用源，从ports.ubuntu.com获取
-            deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse
-            deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse
-            deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-backports main universe restricted multiverse
-            deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse
-            EOF'
+            # 使用单行命令创建ARMHF架构的软件源配置
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-backports main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
             
             # 修改主源列表，限制为仅获取amd64的包
             sudo sed -i 's/^deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
