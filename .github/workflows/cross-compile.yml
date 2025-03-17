@@ -32,10 +32,26 @@ jobs:
       - name: Setup multiarch support
         run: |
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            # 添加ARM64架构
             sudo dpkg --add-architecture arm64
+            
+            # 添加ports.ubuntu.com作为ARM64架构的软件源
+            sudo sh -c 'echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe" > /etc/apt/sources.list.d/arm64.list'
+            sudo sh -c 'echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe" >> /etc/apt/sources.list.d/arm64.list'
+            sudo sh -c 'echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe" >> /etc/apt/sources.list.d/arm64.list'
+            
+            # 更新软件源
             sudo apt-get update
           elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
+            # 添加ARMHF架构
             sudo dpkg --add-architecture armhf
+            
+            # 添加ports.ubuntu.com作为ARMHF架构的软件源
+            sudo sh -c 'echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble main universe" > /etc/apt/sources.list.d/armhf.list'
+            sudo sh -c 'echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe" >> /etc/apt/sources.list.d/armhf.list'
+            sudo sh -c 'echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports noble-security main universe" >> /etc/apt/sources.list.d/armhf.list'
+            
+            # 更新软件源
             sudo apt-get update
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             # RISC-V 可能需要专门的仓库
@@ -139,9 +155,107 @@ jobs:
           mkdir -p pkg
           DESTDIR=$(pwd)/pkg meson install -C build
           
+          # 创建部署脚本
+          cat > pkg/install.sh << 'EOF'
+          #!/bin/bash
+          # iptux 安装脚本
+          
+          # 检查是否以root运行
+          if [ "$(id -u)" != "0" ]; then
+            echo "请以root权限运行此脚本"
+            exit 1
+          fi
+          
+          # 安装目录
+          INSTALL_DIR="/usr/local"
+          
+          # 创建目录（如果不存在）
+          mkdir -p $INSTALL_DIR/bin
+          mkdir -p $INSTALL_DIR/lib
+          mkdir -p $INSTALL_DIR/share
+          
+          # 复制文件
+          echo "正在安装iptux..."
+          cp -r usr/local/bin/* $INSTALL_DIR/bin/ 2>/dev/null || echo "警告：bin目录复制失败或为空"
+          cp -r usr/local/lib/* $INSTALL_DIR/lib/ 2>/dev/null || echo "警告：lib目录复制失败或为空" 
+          cp -r usr/local/share/* $INSTALL_DIR/share/ 2>/dev/null || echo "警告：share目录复制失败或为空"
+          cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
+          cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
+          cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
+          
+          # 设置可执行权限
+          find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
+          
+          # 运行ldconfig更新共享库缓存
+          echo "更新共享库缓存..."
+          ldconfig
+          
+          echo "安装完成！请确保安装以下依赖:"
+          cat dependencies.txt
+          
+          echo "iptux现在可以从命令行启动: iptux"
+          EOF
+          
+          # 设置部署脚本权限
+          chmod +x pkg/install.sh
+          
+          # 创建依赖列表
+          cat > pkg/dependencies.txt << EOF
+          # 以下是运行iptux所需的依赖
+          libgtk-3-0
+          libglib2.0-0
+          libjsoncpp25 (或libjsoncpp24，取决于系统版本)
+          libsigc++-2.0-0v5
+          libgoogle-glog0v5
+          libayatana-appindicator3-1
+          
+          # 安装命令参考
+          # 对于Debian/Ubuntu系统:
+          apt-get install -y libgtk-3-0 libglib2.0-0 libjsoncpp25 libsigc++-2.0-0v5 libgoogle-glog0v5 libayatana-appindicator3-1
+          EOF
+          
+          # 创建一个README文件
+          cat > pkg/README.md << EOF
+          # iptux ${{ github.event.inputs.target_arch }} 安装指南
+          
+          ## 安装方法
+          
+          1. 解压安装包: \`tar xzf iptux-${{ github.event.inputs.target_arch }}.tar.gz\`
+          2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
+          3. 安装依赖: \`sudo apt-get install -y \$(grep -v "^#" dependencies.txt | grep -v "取决于系统版本" | tr '\n' ' ')\`
+          4. 以root权限运行安装脚本: \`sudo ./install.sh\`
+          
+          ## 故障排除
+          
+          如果遇到"共享库缺失"的错误，请确保已安装所有dependencies.txt中列出的依赖。
+          
+          ## 手动安装方法
+          
+          如果安装脚本不能正常工作，您可以手动安装:
+          
+          \`\`\`bash
+          sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/share
+          sudo cp -r usr/local/bin/* /usr/local/bin/ 2>/dev/null || true
+          sudo cp -r usr/local/lib/* /usr/local/lib/ 2>/dev/null || true
+          sudo cp -r usr/local/share/* /usr/local/share/ 2>/dev/null || true
+          sudo cp -r usr/bin/* /usr/local/bin/ 2>/dev/null || true
+          sudo cp -r usr/lib/* /usr/local/lib/ 2>/dev/null || true
+          sudo cp -r usr/share/* /usr/local/share/ 2>/dev/null || true
+          sudo find /usr/local/bin -type f -exec chmod +x {} \; 2>/dev/null
+          sudo ldconfig
+          \`\`\`
+          EOF
+          
+          # 打包所有文件为tar.gz
+          cd pkg
+          tar czf ../iptux-${{ github.event.inputs.target_arch }}.tar.gz *
+          cd ..
+      
       - name: Upload artifacts
         uses: actions/upload-artifact@v4.6.1
         with:
           name: iptux-${{ github.event.inputs.target_arch }}
-          path: pkg
+          path: |
+            pkg/
+            iptux-${{ github.event.inputs.target_arch }}.tar.gz
           retention-days: 7 
