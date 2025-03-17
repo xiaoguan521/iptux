@@ -33,22 +33,20 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            sudo apt-get install -y libglib2.0-dev-arm64-cross libgtk-3-dev-arm64-cross
             echo "CROSS_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
             sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+            sudo apt-get install -y libglib2.0-dev-armhf-cross libgtk-3-dev-armhf-cross
             echo "CROSS_TRIPLE=arm-linux-gnueabihf" >> $GITHUB_ENV
+            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+            # 对于 RISC-V 可能需要自己构建依赖库
             echo "CROSS_TRIPLE=riscv64-linux-gnu" >> $GITHUB_ENV
+            echo "CROSS_PKG_CONFIG_PATH=/usr/lib/riscv64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           fi
-      
-      - name: Configure
-        run: |
-          mkdir -p build
-          meson setup build \
-            --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
-            --buildtype=release \
-            -Db_lto=false
       
       - name: Prepare cross compilation configuration
         run: |
@@ -60,6 +58,12 @@ jobs:
           ar = '${{ env.CROSS_TRIPLE }}-ar'
           strip = '${{ env.CROSS_TRIPLE }}-strip'
           pkgconfig = 'pkg-config'
+          
+          [built-in options]
+          pkg_config_path = '${{ env.CROSS_PKG_CONFIG_PATH }}'
+          
+          [properties]
+          needs_exe_wrapper = true
           
           [host_machine]
           system = 'linux'
@@ -73,6 +77,25 @@ jobs:
             sed -i 's/cpu_family = .*/cpu_family = "arm"/' cross-files/${{ github.event.inputs.target_arch }}.txt
             sed -i 's/cpu = .*/cpu = "armv7-a"/' cross-files/${{ github.event.inputs.target_arch }}.txt
           fi
+      
+      - name: Configure
+        run: |
+          mkdir -p build
+          
+          # 输出调试信息
+          echo "===== 交叉编译环境信息 ====="
+          echo "目标架构: ${{ github.event.inputs.target_arch }}"
+          echo "编译器: ${{ env.CROSS_TRIPLE }}-gcc"
+          echo "pkg-config路径: ${{ env.CROSS_PKG_CONFIG_PATH }}"
+          echo "交叉编译配置文件内容:"
+          cat cross-files/${{ github.event.inputs.target_arch }}.txt
+          echo "=========================="
+          
+          # 配置构建
+          meson setup build \
+            --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
+            --buildtype=release \
+            -Db_lto=false
       
       - name: Build
         run: |
