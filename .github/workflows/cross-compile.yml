@@ -1,0 +1,91 @@
+name: cross-compile
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: '目标架构'
+        required: true
+        default: 'aarch64'
+        type: choice
+        options:
+          - aarch64
+          - armv7
+          - riscv64
+
+env:
+  DEB_PKGS: >-
+    g++ meson appstream gettext libgoogle-glog-dev libgtk-3-dev libglib2.0-dev
+    libjsoncpp-dev libsigc++-2.0-dev libayatana-appindicator3-dev
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ env.DEB_PKGS }}
+          
+      - name: Install cross-compilation toolchain
+        run: |
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            echo "CROSS_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
+            sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+            echo "CROSS_TRIPLE=arm-linux-gnueabihf" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+            echo "CROSS_TRIPLE=riscv64-linux-gnu" >> $GITHUB_ENV
+          fi
+      
+      - name: Configure
+        run: |
+          mkdir -p build
+          meson setup build \
+            --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
+            --buildtype=release \
+            -Db_lto=false
+      
+      - name: Prepare cross compilation configuration
+        run: |
+          mkdir -p cross-files
+          cat > cross-files/${{ github.event.inputs.target_arch }}.txt << EOF
+          [binaries]
+          c = '${{ env.CROSS_TRIPLE }}-gcc'
+          cpp = '${{ env.CROSS_TRIPLE }}-g++'
+          ar = '${{ env.CROSS_TRIPLE }}-ar'
+          strip = '${{ env.CROSS_TRIPLE }}-strip'
+          pkgconfig = 'pkg-config'
+          
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${{ github.event.inputs.target_arch }}'
+          cpu = '${{ github.event.inputs.target_arch }}'
+          endian = 'little'
+          EOF
+          
+          if [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
+            # 对于 armv7 架构需要指定具体的CPU系列
+            sed -i 's/cpu_family = .*/cpu_family = "arm"/' cross-files/${{ github.event.inputs.target_arch }}.txt
+            sed -i 's/cpu = .*/cpu = "armv7-a"/' cross-files/${{ github.event.inputs.target_arch }}.txt
+          fi
+      
+      - name: Build
+        run: |
+          meson compile -C build -v
+      
+      - name: Package
+        run: |
+          mkdir -p pkg
+          DESTDIR=$(pwd)/pkg meson install -C build
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: iptux-${{ github.event.inputs.target_arch }}
+          path: pkg
+          retention-days: 7 
