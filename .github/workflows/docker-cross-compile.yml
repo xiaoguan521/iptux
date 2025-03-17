@@ -66,7 +66,7 @@ jobs:
           # 在目标架构的容器中直接编译
           docker run --rm -v $(pwd):/workspace -w /workspace \
             --platform $DOCKER_PLATFORM \
-            --memory=4g --memory-swap=8g \
+            --memory=8g --memory-swap=12g \
             $DOCKER_IMAGE /bin/bash -c "
             set -ex
             
@@ -85,57 +85,132 @@ jobs:
             which g++ || { echo '错误：g++ 未找到'; exit 1; }
             which meson || { echo '错误：meson 未找到'; exit 1; }
             
+            # 显示库信息和pkg-config路径
+            echo '验证库信息:'
+            pkg-config --modversion jsoncpp || echo 'jsoncpp不在pkg-config路径中'
+            pkg-config --cflags --libs jsoncpp || echo 'jsoncpp pkg-config无法获取编译参数'
+            
+            # 查找jsoncpp库文件
+            echo '查找jsoncpp库:'
+            find /usr -name 'libjsoncpp*' 2>/dev/null || echo '未找到jsoncpp库文件'
+            find /usr -name '*jsoncpp*.pc' 2>/dev/null || echo '未找到jsoncpp的pkg-config文件'
+            
             # 创建降低优化级别的meson_options.txt
             cat > meson_options.txt <<-'EOF'
             option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
             option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
             EOF
             
+            # 显示环境变量
+            echo '编译环境变量:'
+            env | grep -E 'PATH|PKG|CFLAGS|LDFLAGS'
+            
             # 配置项目
+            echo '===== 开始Meson配置 ====='
             meson setup build \
               --buildtype=release \
               -Doptimization=1 \
-              -Dwerror=false || \
-            meson setup build \
-              --buildtype=release \
-              -Doptimization=0 \
-              -Dauto_features=disabled \
-              -Dwerror=false
+              -Dwerror=false \
+              --verbose > meson_setup_log.txt 2>&1 || {
+                echo '=== Meson配置日志 ==='
+                cat meson_setup_log.txt
+                echo '尝试降低优化级别重新配置...'
+                meson setup build \
+                  --buildtype=release \
+                  -Doptimization=0 \
+                  -Dauto_features=disabled \
+                  -Dwerror=false \
+                  --verbose > meson_setup_retry_log.txt 2>&1 || {
+                    echo '=== Meson第二次配置日志 ==='
+                    cat meson_setup_retry_log.txt
+                    echo '错误：Meson配置失败'
+                    exit 1
+                  }
+              }
             
-            # 单线程编译减少内存消耗
-            ninja -C build -j1 || {
-              echo '编译失败，创建基本包结构...';
+            # 捕获ninja编译输出，以便在失败时分析
+            echo '===== 开始Ninja编译 ====='
+            ninja -C build -j1 -v > ninja_build_log.txt 2>&1 || {
+              echo '=== Ninja编译日志 ==='
+              cat ninja_build_log.txt
+              
+              # 检查段错误
+              if grep -qi 'segmentation fault' ninja_build_log.txt; then
+                echo '错误：编译过程中发生段错误(Segmentation Fault)'
+                echo '最后编译的文件:'
+                tail -n 30 ninja_build_log.txt
+                
+                # 尝试找出哪个源文件导致了段错误
+                LAST_CPP_FILE=$(grep -o '[a-zA-Z0-9_/.\-]\+\.cpp' ninja_build_log.txt | tail -n 1)
+                if [ ! -z "$LAST_CPP_FILE" ]; then
+                  echo "可能导致段错误的源文件: $LAST_CPP_FILE"
+                fi
+              else
+                echo '错误：编译失败，查看日志获取更多信息'
+              fi
+              
+              echo '创建基本包结构...';
               mkdir -p pkg/usr/bin
               echo '#!/bin/bash' > pkg/usr/bin/iptux
-              echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' >> pkg/usr/bin/iptux
+              echo 'echo "This is a placeholder binary. The actual compilation failed."' >> pkg/usr/bin/iptux
+              echo 'echo "错误日志:"' >> pkg/usr/bin/iptux
+              echo 'echo "查看编译日志获取详细信息"' >> pkg/usr/bin/iptux
               chmod +x pkg/usr/bin/iptux
+              
+              # 保存编译日志到输出包
+              mkdir -p pkg/usr/share/iptux
+              cp ninja_build_log.txt pkg/usr/share/iptux/build_error.log 2>/dev/null || true
+              cp meson_setup_log.txt pkg/usr/share/iptux/meson_setup.log 2>/dev/null || true
+              cp meson_setup_retry_log.txt pkg/usr/share/iptux/meson_setup_retry.log 2>/dev/null || true
+              
               exit 0
             }
             
+            echo '编译成功，开始安装...'
+            
             # 安装到临时目录
             mkdir -p pkg
-            DESTDIR=/workspace/pkg meson install -C build || {
+            DESTDIR=/workspace/pkg meson install -C build > install_log.txt 2>&1 || {
+              echo '=== 安装日志 ==='
+              cat install_log.txt
               echo '安装失败，确保基本目录结构存在...';
               mkdir -p /workspace/pkg/usr/bin
               if [ -f build/src/main/iptux ]; then
                 cp build/src/main/iptux /workspace/pkg/usr/bin/
                 chmod +x /workspace/pkg/usr/bin/iptux
               else
+                echo '未找到编译好的iptux二进制文件'
                 echo '#!/bin/bash' > /workspace/pkg/usr/bin/iptux
-                echo 'echo \"This is a placeholder binary. The actual compilation failed.\"' >> /workspace/pkg/usr/bin/iptux
+                echo 'echo "This is a placeholder binary. The actual compilation failed."' >> /workspace/pkg/usr/bin/iptux
                 chmod +x /workspace/pkg/usr/bin/iptux
               fi
+              
+              # 保存安装日志
+              mkdir -p /workspace/pkg/usr/share/iptux
+              cp install_log.txt /workspace/pkg/usr/share/iptux/install_error.log 2>/dev/null || true
             }
             
             # 如果没有找到jsoncpp.pc，手动创建一个
-            echo "未找到jsoncpp.pc，创建一个临时版本..."
-            cat > jsoncpp.pc <<-EOF
-            Name: jsoncpp
-            Description: A JSON implementation in C++
-            Version: 1.9.5
-            Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
-            Cflags: -I/usr/include/jsoncpp
-            EOF
+            echo '检查是否需要创建jsoncpp.pc...'
+            if ! pkg-config --exists jsoncpp; then
+              echo '未找到jsoncpp.pc，创建一个临时版本...'
+              cat > jsoncpp.pc <<-EOF
+              Name: jsoncpp
+              Description: A JSON implementation in C++
+              Version: 1.9.5
+              Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
+              Cflags: -I/usr/include/jsoncpp
+              EOF
+              
+              # 输出创建的pc文件
+              echo '创建的jsoncpp.pc内容:'
+              cat jsoncpp.pc
+            fi
+            
+            # 显示编译结果目录结构
+            echo '编译结果目录结构:'
+            find pkg -type f -exec ls -lh {} \;
+            du -sh pkg/
           "
           
           # 检查编译结果
@@ -145,6 +220,10 @@ jobs:
             echo '#!/bin/bash' > pkg/usr/bin/iptux
             echo 'echo "This is a placeholder binary. The actual compilation failed."' >> pkg/usr/bin/iptux
             chmod +x pkg/usr/bin/iptux
+          else
+            echo "编译结果检查:"
+            find pkg -type f -exec ls -lh {} \;
+            du -sh pkg/
           fi
           
       - name: Create Debian Package
@@ -275,12 +354,22 @@ jobs:
           - libsigc++-2.0-0v5
           - libgoogle-glog0v5
           - libayatana-appindicator3-1
+          
+          ## 编译失败情况下的错误日志
+          
+          如果包中包含 \`usr/share/iptux/build_error.log\` 文件，表示编译过程中出现了错误。
+          您可以查看该文件了解具体的错误原因。
           EOF
           
           # 打包
           cd deploy
           tar czf ../iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz *
           cd ..
+          
+          # 显示最终生成的文件大小
+          echo "最终生成的文件:"
+          ls -lh iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
+          ls -lh iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
