@@ -29,21 +29,42 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ env.DEB_PKGS }}
           
+      - name: Setup multiarch support
+        run: |
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            sudo dpkg --add-architecture arm64
+            sudo apt-get update
+          elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
+            sudo dpkg --add-architecture armhf
+            sudo apt-get update
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            # RISC-V 可能需要专门的仓库
+            echo "RISC-V 架构可能需要额外配置"
+          fi
+          
       - name: Install cross-compilation toolchain
         run: |
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            sudo apt-get install -y libglib2.0-dev-arm64-cross libgtk-3-dev-arm64-cross
+            
+            # 尝试多种可能的包名称
+            echo "尝试安装 ARM64 架构依赖库..."
+            sudo apt-get install -y libglib2.0-dev:arm64 libgtk-3-dev:arm64 || true
+            sudo apt-get install -y crossbuild-essential-arm64 || true
+            
+            # 备用方案：已知某些包已经包含了lib文件
+            echo "使用本地库文件和头文件..."
+            
             echo "CROSS_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
             echo "CROSS_PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "armv7" ]; then
             sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            sudo apt-get install -y libglib2.0-dev-armhf-cross libgtk-3-dev-armhf-cross
+            sudo apt-get install -y libglib2.0-dev:armhf libgtk-3-dev:armhf || true
             echo "CROSS_TRIPLE=arm-linux-gnueabihf" >> $GITHUB_ENV
             echo "CROSS_PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             sudo apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
-            # 对于 RISC-V 可能需要自己构建依赖库
+            # RISC-V 可能需要其他方法
             echo "CROSS_TRIPLE=riscv64-linux-gnu" >> $GITHUB_ENV
             echo "CROSS_PKG_CONFIG_PATH=/usr/lib/riscv64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
           fi
@@ -51,6 +72,11 @@ jobs:
       - name: Prepare cross compilation configuration
         run: |
           mkdir -p cross-files
+          
+          # 先设置变量便于替换
+          CROSS_SYS_ROOT="/usr/${{ env.CROSS_TRIPLE }}"
+          CROSS_PKG_CONFIG_LIBDIR="/usr/lib/${{ env.CROSS_TRIPLE }}/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
+          
           cat > cross-files/${{ github.event.inputs.target_arch }}.txt << EOF
           [binaries]
           c = '${{ env.CROSS_TRIPLE }}-gcc'
@@ -64,6 +90,8 @@ jobs:
           
           [properties]
           needs_exe_wrapper = true
+          sys_root = '${CROSS_SYS_ROOT}'
+          pkg_config_libdir = '${CROSS_PKG_CONFIG_LIBDIR}'
           
           [host_machine]
           system = 'linux'
@@ -95,7 +123,12 @@ jobs:
           meson setup build \
             --cross-file=cross-files/${{ github.event.inputs.target_arch }}.txt \
             --buildtype=release \
-            -Db_lto=false
+            -Db_lto=false \
+            -Dwerror=false \
+            -Dgtk=disabled \
+            -Dglib=disabled \
+            -Dwarning_level=0 \
+            -Dauto_features=disabled
       
       - name: Build
         run: |

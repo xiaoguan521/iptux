@@ -1,0 +1,76 @@
+name: docker-cross-compile
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: '目标架构'
+        required: true
+        default: 'aarch64'
+        type: choice
+        options:
+          - aarch64
+          - arm32v7
+          - riscv64
+
+jobs:
+  docker-cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Prepare Docker image and compile
+        run: |
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            # 使用Docker multi-arch构建
+            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+            
+            # 使用预配置的交叉编译Docker镜像
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-arm64 \
+              bash -c "mkdir -p build && \
+                      meson setup build --buildtype=release && \
+                      ninja -C build"
+                      
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-armv7 \
+              bash -c "mkdir -p build && \
+                      meson setup build --buildtype=release && \
+                      ninja -C build"
+                      
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-riscv64 \
+              bash -c "mkdir -p build && \
+                      meson setup build --buildtype=release && \
+                      ninja -C build"
+          fi
+      
+      - name: Package
+        run: |
+          mkdir -p pkg
+          
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-arm64 \
+              bash -c "DESTDIR=/src/pkg meson install -C build"
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-armv7 \
+              bash -c "DESTDIR=/src/pkg meson install -C build"
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            docker run --rm -v $(pwd):/src -w /src \
+              dockcross/linux-riscv64 \
+              bash -c "DESTDIR=/src/pkg meson install -C build"
+          fi
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: docker-iptux-${{ github.event.inputs.target_arch }}
+          path: pkg
+          retention-days: 7 
