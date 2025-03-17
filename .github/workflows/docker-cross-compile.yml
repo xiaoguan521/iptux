@@ -13,6 +13,11 @@ on:
           - arm32v7
           - riscv64
 
+env:
+  DEB_PKGS: >-
+    libglib2.0-dev libgtk-3-dev libjsoncpp-dev libsigc++-2.0-dev
+    libgoogle-glog-dev gettext libayatana-appindicator3-dev
+
 jobs:
   docker-cross-compile:
     runs-on: ubuntu-latest
@@ -22,55 +27,186 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
+      - name: Create Dockerfile with dependencies
+        run: |
+          cat > Dockerfile.cross << EOF
+          ARG BASE_IMAGE
+          FROM \${BASE_IMAGE}
+          
+          # 安装构建依赖
+          RUN apt-get update && apt-get install -y \\
+              ${{ env.DEB_PKGS }} \\
+              && apt-get clean && rm -rf /var/lib/apt/lists/*
+              
+          WORKDIR /src
+          EOF
+      
       - name: Prepare Docker image and compile
         run: |
-          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
-            # 使用Docker multi-arch构建
-            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-            
-            # 使用预配置的交叉编译Docker镜像
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-arm64 \
-              bash -c "mkdir -p build && \
-                      meson setup build --buildtype=release && \
-                      ninja -C build"
-                      
-          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-armv7 \
-              bash -c "mkdir -p build && \
-                      meson setup build --buildtype=release && \
-                      ninja -C build"
-                      
-          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-riscv64 \
-              bash -c "mkdir -p build && \
-                      meson setup build --buildtype=release && \
-                      ninja -C build"
-          fi
-      
-      - name: Package
-        run: |
-          mkdir -p pkg
+          # 启用QEMU支持
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-arm64 \
-              bash -c "DESTDIR=/src/pkg meson install -C build"
+            # 构建包含依赖的自定义镜像
+            docker build -t dockcross-arm64-deps -f Dockerfile.cross --build-arg BASE_IMAGE=dockcross/linux-arm64 .
+            
+            # 使用自定义镜像进行构建
+            docker run --rm -v $(pwd):/src dockcross-arm64-deps bash -c "
+              mkdir -p build && 
+              cd build &&
+              PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig/ 
+              meson setup --buildtype=release --prefix=/usr/local && 
+              ninja && 
+              cd .. &&
+              mkdir -p pkg && 
+              DESTDIR=\$(pwd)/pkg ninja -C build install
+            "
+            
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-armv7 \
-              bash -c "DESTDIR=/src/pkg meson install -C build"
+            # 构建包含依赖的自定义镜像
+            docker build -t dockcross-armv7-deps -f Dockerfile.cross --build-arg BASE_IMAGE=dockcross/linux-armv7 .
+            
+            # 使用自定义镜像进行构建
+            docker run --rm -v $(pwd):/src dockcross-armv7-deps bash -c "
+              mkdir -p build && 
+              cd build &&
+              PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig/ 
+              meson setup --buildtype=release --prefix=/usr/local && 
+              ninja && 
+              cd .. &&
+              mkdir -p pkg && 
+              DESTDIR=\$(pwd)/pkg ninja -C build install
+            "
+            
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
-            docker run --rm -v $(pwd):/src -w /src \
-              dockcross/linux-riscv64 \
-              bash -c "DESTDIR=/src/pkg meson install -C build"
+            # 构建包含依赖的自定义镜像
+            docker build -t dockcross-riscv64-deps -f Dockerfile.cross --build-arg BASE_IMAGE=dockcross/linux-riscv64 .
+            
+            # 使用自定义镜像进行构建
+            docker run --rm -v $(pwd):/src dockcross-riscv64-deps bash -c "
+              mkdir -p build && 
+              cd build &&
+              PKG_CONFIG_PATH=/usr/lib/riscv64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig/ 
+              meson setup --buildtype=release --prefix=/usr/local && 
+              ninja && 
+              cd .. &&
+              mkdir -p pkg && 
+              DESTDIR=\$(pwd)/pkg ninja -C build install
+            "
           fi
+      
+      - name: Create deployment package
+        run: |
+          # 创建部署脚本
+          cat > install.sh << 'EOF'
+          #!/bin/bash
+          # iptux 安装脚本
+          
+          # 检查是否以root运行
+          if [ "$(id -u)" != "0" ]; then
+            echo "请以root权限运行此脚本"
+            exit 1
+          fi
+          
+          # 安装目录
+          INSTALL_DIR="/usr/local"
+          
+          # 创建目录（如果不存在）
+          mkdir -p $INSTALL_DIR/bin
+          mkdir -p $INSTALL_DIR/lib
+          mkdir -p $INSTALL_DIR/share
+          
+          # 复制文件
+          echo "正在安装iptux..."
+          
+          # 智能处理不同结构的安装包
+          if [ -d "usr/local" ]; then
+            cp -r usr/local/bin/* $INSTALL_DIR/bin/ 2>/dev/null || echo "警告：bin目录复制失败或为空"
+            cp -r usr/local/lib/* $INSTALL_DIR/lib/ 2>/dev/null || echo "警告：lib目录复制失败或为空" 
+            cp -r usr/local/share/* $INSTALL_DIR/share/ 2>/dev/null || echo "警告：share目录复制失败或为空"
+          fi
+          
+          if [ -d "usr" ]; then
+            cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
+            cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
+            cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
+          fi
+          
+          # 设置可执行权限
+          find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
+          
+          # 运行ldconfig更新共享库缓存
+          echo "更新共享库缓存..."
+          ldconfig
+          
+          echo "安装完成！请确保安装以下依赖:"
+          cat dependencies.txt
+          
+          echo "iptux现在可以从命令行启动: iptux"
+          EOF
+          
+          # 设置部署脚本权限
+          chmod +x install.sh
+          
+          # 创建依赖列表
+          cat > dependencies.txt << EOF
+          # 以下是运行iptux所需的依赖
+          libgtk-3-0
+          libglib2.0-0
+          libjsoncpp25 (或libjsoncpp24，取决于系统版本)
+          libsigc++-2.0-0v5
+          libgoogle-glog0v5
+          libayatana-appindicator3-1
+          
+          # 安装命令参考
+          # 对于Debian/Ubuntu系统:
+          apt-get install -y libgtk-3-0 libglib2.0-0 libjsoncpp25 libsigc++-2.0-0v5 libgoogle-glog0v5 libayatana-appindicator3-1
+          EOF
+          
+          # 创建一个README文件
+          cat > README.md << EOF
+          # iptux ${{ github.event.inputs.target_arch }} 安装指南（Docker交叉编译版）
+          
+          ## 安装方法
+          
+          1. 解压安装包: \`tar xzf iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz\`
+          2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
+          3. 安装依赖: \`sudo apt-get install -y \$(grep -v "^#" dependencies.txt | grep -v "取决于系统版本" | tr '\n' ' ')\`
+          4. 以root权限运行安装脚本: \`sudo ./install.sh\`
+          
+          ## 故障排除
+          
+          如果遇到"共享库缺失"的错误，请确保已安装所有dependencies.txt中列出的依赖。
+          
+          ## 手动安装方法
+          
+          如果安装脚本不能正常工作，您可以手动安装:
+          
+          \`\`\`bash
+          sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/share
+          sudo cp -r usr/local/bin/* /usr/local/bin/ 2>/dev/null || true
+          sudo cp -r usr/local/lib/* /usr/local/lib/ 2>/dev/null || true
+          sudo cp -r usr/local/share/* /usr/local/share/ 2>/dev/null || true
+          sudo find /usr/local/bin -type f -exec chmod +x {} \; 2>/dev/null
+          sudo ldconfig
+          \`\`\`
+          EOF
+          
+          # 打包所有文件
+          mkdir -p deploy
+          cp -r pkg/* deploy/ || true
+          cp install.sh dependencies.txt README.md deploy/
+          
+          # 打包为tar.gz
+          cd deploy
+          tar czf ../iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz *
+          cd ..
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4.6.1
         with:
-          name: docker-iptux-${{ github.event.inputs.target_arch }}
-          path: pkg
+          name: iptux-docker-${{ github.event.inputs.target_arch }}
+          path: |
+            deploy/
+            iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
           retention-days: 7 
