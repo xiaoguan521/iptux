@@ -81,16 +81,24 @@ jobs:
             
             # 配置项目
             echo "===== 开始Meson配置 ======"
+            
+            # 创建编译器选项文件
+            echo "[properties]" > cross_opts.txt
+            echo "c_args = ['-O0']" >> cross_opts.txt
+            echo "cpp_args = ['-O0']" >> cross_opts.txt
+            
+            # 配置使用自定义选项，禁用测试
             meson setup build \
-                --buildtype=release \
+                --buildtype=plain \
+                -Dtests=disabled \
                 -Doptimization=0 \
                 -Dwarning_level=0 \
-                -Dtests=false
+                --cross-file cross_opts.txt
             
             # 编译项目
             echo "===== 开始Ninja编译 ====="
-            # 使用更少的线程进行编译，减少内存压力
-            ninja -C build -j2
+            # 使用单线程编译以减少内存压力
+            CXXFLAGS="-O0" CFLAGS="-O0" ninja -C build -j1
             
             # 创建安装目录并安装
             echo "编译成功，开始安装..."
