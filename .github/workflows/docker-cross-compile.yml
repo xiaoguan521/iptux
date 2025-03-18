@@ -129,19 +129,71 @@ jobs:
             # 创建依赖目录
             mkdir -p /deps
             
-            # 收集常见依赖库
+            # 收集所有可能的依赖库 - 使用cp -P保留符号链接
             echo "收集依赖库..."
-            find /usr/lib -name "libjsoncpp.so*" -exec cp -v {} /deps/ \;
-            find /usr/lib -name "libsigc-2.0.so*" -exec cp -v {} /deps/ \;
-            find /usr/lib -name "libglog.so*" -exec cp -v {} /deps/ \;
-            find /usr/lib -name "libayatana-appindicator3.so*" -exec cp -v {} /deps/ \;
+            
+            # 使用函数来收集库文件和它们的符号链接
+            collect_lib() {
+              local pattern=$1
+              echo "正在收集 $pattern ..."
+              
+              # 找到所有匹配的库文件
+              find /usr/lib -name "$pattern" | while read lib; do
+                cp -Pv "$lib" /deps/
+                
+                # 如果是符号链接，找到并复制真实文件
+                if [ -L "$lib" ]; then
+                  real_lib=$(readlink -f "$lib")
+                  if [ -f "$real_lib" ]; then
+                    cp -Pv "$real_lib" /deps/
+                  fi
+                fi
+                
+                # 复制可能的相关符号链接
+                lib_base=$(basename "$lib" | cut -d. -f1)
+                lib_dir=$(dirname "$lib")
+                find "$lib_dir" -name "${lib_base}.so*" | while read related_lib; do
+                  cp -Pv "$related_lib" /deps/
+                done
+              done
+            }
+            
+            # 收集常见依赖库
+            collect_lib "libjsoncpp.so*"
+            collect_lib "libsigc-2.0.so*"
+            collect_lib "libglog.so*"
+            collect_lib "libayatana-appindicator3.so*"
+            collect_lib "libgtk-3.so*"
+            collect_lib "libglib-2.0.so*"
+            collect_lib "libtinyxml2.so*"
+            
+            # 使用ldd查找更多依赖
+            if [ -f "build/src/iptux" ]; then
+              echo "使用ldd查找依赖..."
+              ldd build/src/iptux | grep "=>" | awk '{print $3}' | while read lib; do
+                if [ -f "$lib" ]; then
+                  cp -Pv "$lib" /deps/
+                  
+                  # 收集符号链接
+                  lib_base=$(basename "$lib" | cut -d. -f1)
+                  lib_dir=$(dirname "$lib")
+                  find "$lib_dir" -name "${lib_base}.so*" | while read related_lib; do
+                    cp -Pv "$related_lib" /deps/
+                  done
+                fi
+              done
+            fi
             
             # 显示收集到的依赖
             echo "收集到的依赖库:"
             ls -la /deps/
             
-            # 复制到卷挂载点
-            cp -rv /deps/* /deps_out/
+            # 检查符号链接状态
+            echo "检查符号链接:"
+            find /deps -type l -exec ls -la {} \;
+            
+            # 复制到卷挂载点 - 使用cp -P保留符号链接
+            cp -Prv /deps/* /deps_out/
             echo "依赖已复制到宿主机"
             ls -la /deps_out/
       
@@ -253,12 +305,13 @@ jobs:
           echo '' >> deploy/install.sh
           echo '# 安装目录' >> deploy/install.sh
           echo 'INSTALL_DIR="/usr/local"' >> deploy/install.sh
+          echo 'DEPS_DIR="$INSTALL_DIR/lib/iptux/deps"' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 创建目录' >> deploy/install.sh
           echo 'mkdir -p $INSTALL_DIR/bin' >> deploy/install.sh
           echo 'mkdir -p $INSTALL_DIR/lib' >> deploy/install.sh
           echo 'mkdir -p $INSTALL_DIR/share' >> deploy/install.sh
-          echo 'mkdir -p $INSTALL_DIR/lib/iptux/deps' >> deploy/install.sh
+          echo 'mkdir -p $DEPS_DIR' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 复制文件' >> deploy/install.sh
           echo 'echo "正在安装iptux..."' >> deploy/install.sh
@@ -266,19 +319,41 @@ jobs:
           echo 'cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true' >> deploy/install.sh
           echo 'cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true' >> deploy/install.sh
           echo '' >> deploy/install.sh
+          echo '# 复制依赖库 - 使用cp -P保留符号链接' >> deploy/install.sh
+          echo 'echo "正在安装依赖库..."' >> deploy/install.sh
+          echo 'if [ -d "usr/lib/iptux/deps" ]; then' >> deploy/install.sh
+          echo '  cp -P usr/lib/iptux/deps/* $DEPS_DIR/' >> deploy/install.sh
+          echo '  echo "依赖库安装完成:"' >> deploy/install.sh
+          echo '  ls -la $DEPS_DIR/' >> deploy/install.sh
+          echo '  echo "检查符号链接:"' >> deploy/install.sh
+          echo '  find $DEPS_DIR -type l -exec ls -la {} \;' >> deploy/install.sh
+          echo 'fi' >> deploy/install.sh
+          echo '' >> deploy/install.sh
           echo '# 设置可执行权限' >> deploy/install.sh
           echo 'find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 创建依赖库配置' >> deploy/install.sh
-          echo 'if [ -d "$INSTALL_DIR/lib/iptux/deps" ]; then' >> deploy/install.sh
-          echo '  echo "$INSTALL_DIR/lib/iptux/deps" > /etc/ld.so.conf.d/iptux-deps.conf' >> deploy/install.sh
+          echo 'echo "配置依赖库路径..."' >> deploy/install.sh
+          echo 'if [ -d "$DEPS_DIR" ]; then' >> deploy/install.sh
+          echo '  echo "$DEPS_DIR" > /etc/ld.so.conf.d/iptux-deps.conf' >> deploy/install.sh
           echo '  ldconfig' >> deploy/install.sh
+          echo '  echo "动态库缓存已更新"' >> deploy/install.sh
           echo 'fi' >> deploy/install.sh
           echo '' >> deploy/install.sh
-          echo '# 更新共享库缓存' >> deploy/install.sh
-          echo 'ldconfig' >> deploy/install.sh
-          echo '' >> deploy/install.sh
-          echo 'echo "安装完成！iptux现在可以从命令行启动: iptux"' >> deploy/install.sh
+          echo '# 验证安装' >> deploy/install.sh
+          echo 'echo "验证安装..."' >> deploy/install.sh
+          echo 'if [ -f "$INSTALL_DIR/bin/iptux" ]; then' >> deploy/install.sh
+          echo '  echo "检查iptux依赖..."' >> deploy/install.sh
+          echo '  ldd $INSTALL_DIR/bin/iptux || true' >> deploy/install.sh
+          echo '  echo ""' >> deploy/install.sh
+          echo '  echo "检查libtinyxml2:"' >> deploy/install.sh
+          echo '  find $DEPS_DIR -name "*tinyxml2*" -exec ls -la {} \;' >> deploy/install.sh
+          echo '  echo ""' >> deploy/install.sh
+          echo '  echo "如果遇到符号链接问题，请尝试手动修复:"' >> deploy/install.sh
+          echo '  echo "例如: cd $DEPS_DIR && ln -sf libtinyxml2.so.9.0.0 libtinyxml2.so.9"' >> deploy/install.sh
+          echo 'else' >> deploy/install.sh
+          echo '  echo "警告: iptux可执行文件未找到"' >> deploy/install.sh
+          echo 'fi' >> deploy/install.sh
           
           # 创建README
           echo '# iptux' > deploy/README.md
