@@ -96,7 +96,7 @@ jobs:
             find /usr -name "*jsoncpp*.pc" 2>/dev/null || echo "未找到jsoncpp的pkg-config文件"
             
             # 创建降低优化级别的meson_options.txt
-            cat > meson_options.txt << 'EOT'
+            cat > meson_options.txt << EOT
             option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
             option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
             EOT
@@ -128,40 +128,40 @@ jobs:
             
             # 捕获ninja编译输出，以便在失败时分析
             echo "===== 开始Ninja编译 ====="
-            ninja -C build -j1 -v > ninja_build_log.txt 2>&1 || {
-              echo "=== Ninja编译日志 ==="
-              cat ninja_build_log.txt
-              
-              # 检查段错误
-              if grep -qi "segmentation fault" ninja_build_log.txt; then
-                echo "错误：编译过程中发生段错误(Segmentation Fault)"
-                echo "最后编译的文件:"
-                tail -n 30 ninja_build_log.txt
+            ninja -C build -j1 > ninja_build_log.txt 2>&1 || {
+                echo "=== Ninja编译日志 ==="
+                cat ninja_build_log.txt
                 
-                # 尝试找出哪个源文件导致了段错误
-                LAST_CPP_FILE=$(grep -o "[a-zA-Z0-9_/.\-]\+\.cpp" ninja_build_log.txt | tail -n 1)
-                if [ ! -z "$LAST_CPP_FILE" ]; then
-                  echo "可能导致段错误的源文件: $LAST_CPP_FILE"
+                # 检查段错误
+                if grep -qi "segmentation fault" ninja_build_log.txt; then
+                    echo "错误：编译过程中发生段错误(Segmentation Fault)"
+                    echo "最后编译的文件:"
+                    tail -n 30 ninja_build_log.txt
+                    
+                    # 尝试找出哪个源文件导致了段错误
+                    LAST_CPP_FILE=$(grep -o "[a-zA-Z0-9_/.\-]\+\.cpp" ninja_build_log.txt | tail -n 1)
+                    if [ ! -z "$LAST_CPP_FILE" ]; then
+                        echo "可能导致段错误的源文件: $LAST_CPP_FILE"
+                    fi
+                else
+                    echo "错误：编译失败，查看日志获取更多信息"
                 fi
-              else
-                echo "错误：编译失败，查看日志获取更多信息"
-              fi
-              
-              echo "创建基本包结构...";
-              mkdir -p pkg/usr/bin
-              echo "#!/bin/bash" > pkg/usr/bin/iptux
-              echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
-              echo "echo \"错误日志:\"" >> pkg/usr/bin/iptux
-              echo "echo \"查看编译日志获取详细信息\"" >> pkg/usr/bin/iptux
-              chmod +x pkg/usr/bin/iptux
-              
-              # 保存编译日志到输出包
-              mkdir -p pkg/usr/share/iptux
-              cp ninja_build_log.txt pkg/usr/share/iptux/build_error.log 2>/dev/null || true
-              cp meson_setup_log.txt pkg/usr/share/iptux/meson_setup.log 2>/dev/null || true
-              cp meson_setup_retry_log.txt pkg/usr/share/iptux/meson_setup_retry.log 2>/dev/null || true
-              
-              exit 0
+                
+                echo "创建基本包结构...";
+                mkdir -p pkg/usr/bin
+                echo "#!/bin/bash" > pkg/usr/bin/iptux
+                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
+                echo "echo \"错误日志:\"" >> pkg/usr/bin/iptux
+                echo "echo \"查看编译日志获取详细信息\"" >> pkg/usr/bin/iptux
+                chmod +x pkg/usr/bin/iptux
+                
+                # 保存编译日志到输出包
+                mkdir -p pkg/usr/share/iptux
+                cp ninja_build_log.txt pkg/usr/share/iptux/build_error.log 2>/dev/null || true
+                cp meson_setup_log.txt pkg/usr/share/iptux/meson_setup.log 2>/dev/null || true
+                cp meson_setup_retry_log.txt pkg/usr/share/iptux/meson_setup_retry.log 2>/dev/null || true
+                
+                exit 0
             }
             
             echo "编译成功，开始安装..."
@@ -192,7 +192,7 @@ jobs:
             echo "检查是否需要创建jsoncpp.pc..."
             if ! pkg-config --exists jsoncpp; then
               echo "未找到jsoncpp.pc，创建一个临时版本..."
-              cat > jsoncpp.pc << 'EOF'
+              cat > jsoncpp.pc << EOF
               Name: jsoncpp
               Description: A JSON implementation in C++
               Version: 1.9.5
@@ -251,7 +251,7 @@ jobs:
           printf "Package: iptux\nVersion: %s\nSection: net\nPriority: optional\nArchitecture: %s\nMaintainer: IPTUX Team <example@example.com>\nDescription: IP Messenger client for Linux\n IPTUX is an IP Messenger client for Linux. It is compatible with\n IPMsg, a popular message client in China.\nDepends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1\n" "$APP_VERSION" "$DEB_ARCH" > debian-pkg/DEBIAN/control
           
           # 创建postinst脚本
-          cat > debian-pkg/DEBIAN/postinst << 'EOF'
+          cat > debian-pkg/DEBIAN/postinst << EOF
           #!/bin/sh
           set -e
 
@@ -265,9 +265,9 @@ jobs:
 
           exit 0
           EOF
-          
-          # 创建postrm脚本
-          cat > debian-pkg/DEBIAN/postrm << 'EOF'
+                    
+                    # 创建postrm脚本
+                    cat > debian-pkg/DEBIAN/postrm << EOF
           #!/bin/sh
           set -e
 
@@ -278,7 +278,7 @@ jobs:
 
           exit 0
           EOF
-          
+                    
           # 设置权限
           chmod 755 debian-pkg/DEBIAN/postinst
           chmod 755 debian-pkg/DEBIAN/postrm
@@ -294,7 +294,7 @@ jobs:
           cp -r pkg/* deploy/ 2>/dev/null || true
           
           # 添加安装脚本
-          cat > deploy/install.sh << 'EOF'
+          cat > deploy/install.sh << EOF
           #!/bin/bash
           # iptux 安装脚本
 
