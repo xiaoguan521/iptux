@@ -89,7 +89,7 @@ jobs:
             
             # 编译项目
             echo "===== 开始Ninja编译 ====="
-            ninja -C build
+            ninja -C build -j4
             
             # 创建安装目录并安装
             echo "编译成功，开始安装..."
@@ -232,7 +232,7 @@ jobs:
           chmod 755 debian-pkg/DEBIAN/postrm
           
           # 创建Debian包
-          dpkg-deb --build --root-owner-group debian-pkg
+          dpkg-deb --build --root-owner-group -Zgzip debian-pkg
           
           # 重命名Debian包
           mv debian-pkg.deb iptux_${APP_VERSION}_${DEB_ARCH}.deb
