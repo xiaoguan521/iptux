@@ -63,7 +63,18 @@ jobs:
           # 安装依赖
           install: |
             apt-get update -q -y
-            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
+            # 添加旧版本GCC/G++仓库
+            apt-get install -y --no-install-recommends software-properties-common
+            add-apt-repository -y ppa:ubuntu-toolchain-r/test
+            apt-get update -q -y
+            # 安装GCC-7和其他依赖
+            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }} gcc-7 g++-7
+            # 设置GCC-7为默认版本
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 80 --slave /usr/bin/g++ g++ /usr/bin/g++-7
+            update-alternatives --set gcc /usr/bin/gcc-7
+            # 验证版本
+            gcc --version
+            g++ --version
           
           # 运行编译命令 - 与 build-package.yml 完全一致
           run: |
@@ -98,15 +109,17 @@ jobs:
             
             # 创建编译器选项文件
             echo "[properties]" > cross_opts.txt
-            echo "c_args = ['-O0']" >> cross_opts.txt
-            echo "cpp_args = ['-O0']" >> cross_opts.txt
+            echo "c_args = ['-O0', '-D_GLIBCXX_USE_CXX11_ABI=0', '-fno-stack-protector']" >> cross_opts.txt
+            echo "cpp_args = ['-O0', '-D_GLIBCXX_USE_CXX11_ABI=0', '-std=c++11', '-fno-stack-protector']" >> cross_opts.txt
+            echo "cpp_link_args = ['-static-libstdc++', '-static-libgcc', '-Wl,--wrap=memcpy']" >> cross_opts.txt
             
             # 配置使用自定义选项，禁用测试
-            meson setup build \
+            CC=gcc-7 CXX=g++-7 meson setup build \
                 --buildtype=plain \
                 -Dtests=disabled \
                 -Doptimization=0 \
                 -Dwarning_level=0 \
+                -Dcpp_std=c++11 \
                 --cross-file cross_opts.txt
             
             monitor_memory
@@ -120,7 +133,11 @@ jobs:
             # 尝试编译主程序
             echo "开始编译主程序..."
             monitor_memory
-            CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1
+            CXXFLAGS="-O0 -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11" \
+            CFLAGS="-O0 -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0" \
+            LDFLAGS="-static-libstdc++ -static-libgcc" \
+            CC="gcc-7" CXX="g++-7" \
+            ninja -C build -j1
             
             monitor_memory
             
@@ -131,6 +148,24 @@ jobs:
             echo "编译成功，开始安装..."
             mkdir -p pkg
             DESTDIR=$(pwd)/pkg meson install -C build
+            
+            # 验证GLIBCXX版本依赖
+            echo "检查GLIBCXX版本依赖..."
+            if [ -f "build/src/iptux" ]; then
+              echo "检查iptux可执行文件:"
+              # 提取依赖的GLIBCXX版本
+              VERSIONS=$(objdump -p build/src/iptux | grep GLIBCXX)
+              echo "$VERSIONS"
+              # 检查是否有高于3.4.25的依赖
+              if echo "$VERSIONS" | grep -q "GLIBCXX_3.4.2[6-9]\|GLIBCXX_3.4.3"; then
+                echo "警告: 发现高于GLIBCXX_3.4.25的依赖，这可能导致兼容性问题!"
+                echo "请检查编译设置，确保静态链接是否生效。"
+              else
+                echo "✓ 未发现高版本GLIBCXX依赖，兼容性良好。"
+              fi
+            else
+              echo "警告: 无法找到iptux可执行文件进行检查。"
+            fi
             
             # 显示编译结果目录结构
             echo "编译结果目录结构:"
@@ -338,6 +373,33 @@ jobs:
           echo '  echo "请以root权限运行此脚本"' >> deploy/install.sh
           echo '  exit 1' >> deploy/install.sh
           echo 'fi' >> deploy/install.sh
+          echo '' >> deploy/install.sh
+          echo '# 检查系统兼容性' >> deploy/install.sh
+          echo 'check_compatibility() {' >> deploy/install.sh
+          echo '  echo "检查系统兼容性..."' >> deploy/install.sh
+          echo '  # 检查libstdc++版本' >> deploy/install.sh
+          echo '  if [ -f /usr/lib/libstdc++.so.6 ]; then' >> deploy/install.sh
+          echo '    GLIBCXX_VERSIONS=$(strings /usr/lib/libstdc++.so.6 | grep GLIBCXX)' >> deploy/install.sh
+          echo '  elif [ -f /usr/lib64/libstdc++.so.6 ]; then' >> deploy/install.sh
+          echo '    GLIBCXX_VERSIONS=$(strings /usr/lib64/libstdc++.so.6 | grep GLIBCXX)' >> deploy/install.sh
+          echo '  elif [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then' >> deploy/install.sh
+          echo '    GLIBCXX_VERSIONS=$(strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX)' >> deploy/install.sh
+          echo '  elif [ -f /usr/lib/aarch64-linux-gnu/libstdc++.so.6 ]; then' >> deploy/install.sh
+          echo '    GLIBCXX_VERSIONS=$(strings /usr/lib/aarch64-linux-gnu/libstdc++.so.6 | grep GLIBCXX)' >> deploy/install.sh
+          echo '  else' >> deploy/install.sh
+          echo '    echo "警告: 无法找到libstdc++.so.6，无法检查兼容性"' >> deploy/install.sh
+          echo '    return' >> deploy/install.sh
+          echo '  fi' >> deploy/install.sh
+          echo '' >> deploy/install.sh
+          echo '  echo "系统支持的GLIBCXX版本:"' >> deploy/install.sh
+          echo '  echo "$GLIBCXX_VERSIONS"' >> deploy/install.sh
+          echo '' >> deploy/install.sh
+          echo '  # 由于我们使用静态链接，这个检查主要是提供信息' >> deploy/install.sh
+          echo '  echo "注意: 此版本使用静态链接，应该能在大多数系统上运行"' >> deploy/install.sh
+          echo '}' >> deploy/install.sh
+          echo '' >> deploy/install.sh
+          echo '# 执行兼容性检查' >> deploy/install.sh
+          echo 'check_compatibility' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 安装目录' >> deploy/install.sh
           echo 'INSTALL_DIR="/usr/local"' >> deploy/install.sh
