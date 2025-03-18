@@ -1,4 +1,4 @@
-name: docker Cross Compile
+name: Docker Cross Compile
 
 on:
   workflow_dispatch:
@@ -67,11 +67,11 @@ jobs:
           docker run --rm -v $(pwd):/workspace -w /workspace \
             --platform $DOCKER_PLATFORM \
             --memory=8g --memory-swap=12g \
-            $DOCKER_IMAGE /bin/bash -c "
+            $DOCKER_IMAGE bash -c '
             set -ex
             
             # 输出系统信息进行验证
-            echo '当前系统架构:'
+            echo "当前系统架构:"
             uname -a
             
             # 显示可用内存
@@ -82,79 +82,76 @@ jobs:
             apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
             
             # 验证关键工具已安装
-            which g++ || { echo '错误：g++ 未找到'; exit 1; }
-            which meson || { echo '错误：meson 未找到'; exit 1; }
+            which g++ || { echo "错误：g++ 未找到"; exit 1; }
+            which meson || { echo "错误：meson 未找到"; exit 1; }
             
             # 显示库信息和pkg-config路径
-            echo '验证库信息:'
-            pkg-config --modversion jsoncpp || echo 'jsoncpp不在pkg-config路径中'
-            pkg-config --cflags --libs jsoncpp || echo 'jsoncpp pkg-config无法获取编译参数'
+            echo "验证库信息:"
+            pkg-config --modversion jsoncpp || echo "jsoncpp不在pkg-config路径中"
+            pkg-config --cflags --libs jsoncpp || echo "jsoncpp pkg-config无法获取编译参数"
             
             # 查找jsoncpp库文件
-            echo '查找jsoncpp库:'
-            find /usr -name 'libjsoncpp*' 2>/dev/null || echo '未找到jsoncpp库文件'
-            find /usr -name '*jsoncpp*.pc' 2>/dev/null || echo '未找到jsoncpp的pkg-config文件'
+            echo "查找jsoncpp库:"
+            find /usr -name "libjsoncpp*" 2>/dev/null || echo "未找到jsoncpp库文件"
+            find /usr -name "*jsoncpp*.pc" 2>/dev/null || echo "未找到jsoncpp的pkg-config文件"
             
             # 创建降低优化级别的meson_options.txt
-            cat > meson_options.txt <<EOF
-option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')
-option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')
-EOF
+            printf "option(\\"optimization\\", type: \\"combo\\", choices: [\\"0\\", \\"g\\", \\"1\\", \\"2\\", \\"3\\", \\"s\\"], value: \\"1\\", description: \\"Optimization level\\")\noption(\\"werror\\", type: \\"boolean\\", value: false, description: \\"Treat warnings as errors\\")\n" > meson_options.txt
             
             # 显示环境变量
-            echo '编译环境变量:'
-            env | grep -E 'PATH|PKG|CFLAGS|LDFLAGS'
+            echo "编译环境变量:"
+            env | grep -E "PATH|PKG|CFLAGS|LDFLAGS"
             
             # 配置项目
-            echo '===== 开始Meson配置 ====='
+            echo "===== 开始Meson配置 ====="
             meson setup build \
               --buildtype=release \
               -Doptimization=1 \
               -Dwerror=false \
               --verbose > meson_setup_log.txt 2>&1 || {
-                echo '=== Meson配置日志 ==='
+                echo "=== Meson配置日志 ==="
                 cat meson_setup_log.txt
-                echo '尝试降低优化级别重新配置...'
+                echo "尝试降低优化级别重新配置..."
                 meson setup build \
                   --buildtype=release \
                   -Doptimization=0 \
                   -Dauto_features=disabled \
                   -Dwerror=false \
                   --verbose > meson_setup_retry_log.txt 2>&1 || {
-                    echo '=== Meson第二次配置日志 ==='
+                    echo "=== Meson第二次配置日志 ==="
                     cat meson_setup_retry_log.txt
-                    echo '错误：Meson配置失败'
+                    echo "错误：Meson配置失败"
                     exit 1
                   }
               }
             
             # 捕获ninja编译输出，以便在失败时分析
-            echo '===== 开始Ninja编译 ====='
+            echo "===== 开始Ninja编译 ====="
             ninja -C build -j1 -v > ninja_build_log.txt 2>&1 || {
-              echo '=== Ninja编译日志 ==='
+              echo "=== Ninja编译日志 ==="
               cat ninja_build_log.txt
               
               # 检查段错误
-              if grep -qi 'segmentation fault' ninja_build_log.txt; then
-                echo '错误：编译过程中发生段错误(Segmentation Fault)'
-                echo '最后编译的文件:'
+              if grep -qi "segmentation fault" ninja_build_log.txt; then
+                echo "错误：编译过程中发生段错误(Segmentation Fault)"
+                echo "最后编译的文件:"
                 tail -n 30 ninja_build_log.txt
                 
                 # 尝试找出哪个源文件导致了段错误
-                LAST_CPP_FILE=$(grep -o '[a-zA-Z0-9_/.\-]\+\.cpp' ninja_build_log.txt | tail -n 1)
+                LAST_CPP_FILE=$(grep -o "[a-zA-Z0-9_/.\-]\+\.cpp" ninja_build_log.txt | tail -n 1)
                 if [ ! -z "$LAST_CPP_FILE" ]; then
                   echo "可能导致段错误的源文件: $LAST_CPP_FILE"
                 fi
               else
-                echo '错误：编译失败，查看日志获取更多信息'
+                echo "错误：编译失败，查看日志获取更多信息"
               fi
               
-              echo '创建基本包结构...';
+              echo "创建基本包结构...";
               mkdir -p pkg/usr/bin
-              echo '#!/bin/bash' > pkg/usr/bin/iptux
-              echo 'echo "This is a placeholder binary. The actual compilation failed."' >> pkg/usr/bin/iptux
-              echo 'echo "错误日志:"' >> pkg/usr/bin/iptux
-              echo 'echo "查看编译日志获取详细信息"' >> pkg/usr/bin/iptux
+              echo "#!/bin/bash" > pkg/usr/bin/iptux
+              echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
+              echo "echo \"错误日志:\"" >> pkg/usr/bin/iptux
+              echo "echo \"查看编译日志获取详细信息\"" >> pkg/usr/bin/iptux
               chmod +x pkg/usr/bin/iptux
               
               # 保存编译日志到输出包
@@ -166,22 +163,22 @@ EOF
               exit 0
             }
             
-            echo '编译成功，开始安装...'
+            echo "编译成功，开始安装..."
             
             # 安装到临时目录
             mkdir -p pkg
             DESTDIR=/workspace/pkg meson install -C build > install_log.txt 2>&1 || {
-              echo '=== 安装日志 ==='
+              echo "=== 安装日志 ==="
               cat install_log.txt
-              echo '安装失败，确保基本目录结构存在...';
+              echo "安装失败，确保基本目录结构存在...";
               mkdir -p /workspace/pkg/usr/bin
               if [ -f build/src/main/iptux ]; then
                 cp build/src/main/iptux /workspace/pkg/usr/bin/
                 chmod +x /workspace/pkg/usr/bin/iptux
               else
-                echo '未找到编译好的iptux二进制文件'
-                echo '#!/bin/bash' > /workspace/pkg/usr/bin/iptux
-                echo 'echo "This is a placeholder binary. The actual compilation failed."' >> /workspace/pkg/usr/bin/iptux
+                echo "未找到编译好的iptux二进制文件"
+                echo "#!/bin/bash" > /workspace/pkg/usr/bin/iptux
+                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> /workspace/pkg/usr/bin/iptux
                 chmod +x /workspace/pkg/usr/bin/iptux
               fi
               
@@ -191,27 +188,21 @@ EOF
             }
             
             # 如果没有找到jsoncpp.pc，手动创建一个
-            echo '检查是否需要创建jsoncpp.pc...'
+            echo "检查是否需要创建jsoncpp.pc..."
             if ! pkg-config --exists jsoncpp; then
-              echo '未找到jsoncpp.pc，创建一个临时版本...'
-              cat > jsoncpp.pc <<EOF
-            Name: jsoncpp
-            Description: A JSON implementation in C++
-            Version: 1.9.5
-            Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
-            Cflags: -I/usr/include/jsoncpp
-            EOF
+              echo "未找到jsoncpp.pc，创建一个临时版本..."
+              printf "Name: jsoncpp\nDescription: A JSON implementation in C++\nVersion: 1.9.5\nLibs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp\nCflags: -I/usr/include/jsoncpp\n" > jsoncpp.pc
               
               # 输出创建的pc文件
-              echo '创建的jsoncpp.pc内容:'
+              echo "创建的jsoncpp.pc内容:"
               cat jsoncpp.pc
             fi
             
             # 显示编译结果目录结构
-            echo '编译结果目录结构:'
+            echo "编译结果目录结构:"
             find pkg -type f -exec ls -lh {} \;
             du -sh pkg/
-          "
+          '
           
           # 检查编译结果
           if [ ! -d "pkg/usr" ]; then
@@ -230,6 +221,18 @@ EOF
         run: |
           echo "开始创建Debian软件包..."
           
+          # 重新设置架构变量
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            DEB_ARCH="arm64"
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            DEB_ARCH="armhf"
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            DEB_ARCH="riscv64"
+          fi
+          
+          # 设置版本变量
+          APP_VERSION="${{ env.APP_VERSION }}"
+          
           # 设置Debian包目录结构
           mkdir -p debian-pkg/DEBIAN
           
@@ -238,47 +241,13 @@ EOF
           cp -r pkg/usr debian-pkg/
           
           # 创建control文件
-          cat > debian-pkg/DEBIAN/control <<EOF
-Package: iptux
-Version: ${{ env.APP_VERSION }}
-Section: net
-Priority: optional
-Architecture: ${{ env.DEB_ARCH }}
-Maintainer: IPTUX Team <example@example.com>
-Description: IP Messenger client for Linux
- IPTUX is an IP Messenger client for Linux. It is compatible with
- IPMsg, a popular message client in China.
-Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1
-EOF
+          printf "Package: iptux\nVersion: %s\nSection: net\nPriority: optional\nArchitecture: %s\nMaintainer: IPTUX Team <example@example.com>\nDescription: IP Messenger client for Linux\n IPTUX is an IP Messenger client for Linux. It is compatible with\n IPMsg, a popular message client in China.\nDepends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1\n" "$APP_VERSION" "$DEB_ARCH" > debian-pkg/DEBIAN/control
           
           # 创建postinst脚本
-          cat > debian-pkg/DEBIAN/postinst <<EOF
-#!/bin/sh
-set -e
-
-# 更新共享库缓存
-ldconfig
-
-# 更新桌面菜单数据库
-if [ -x /usr/bin/update-desktop-database ]; then
-  update-desktop-database -q || true
-fi
-
-exit 0
-EOF
+          printf "#!/bin/sh\nset -e\n\n# 更新共享库缓存\nldconfig\n\n# 更新桌面菜单数据库\nif [ -x /usr/bin/update-desktop-database ]; then\n  update-desktop-database -q || true\nfi\n\nexit 0\n" > debian-pkg/DEBIAN/postinst
           
           # 创建postrm脚本
-          cat > debian-pkg/DEBIAN/postrm <<EOF
-#!/bin/sh
-set -e
-
-# 更新桌面菜单数据库
-if [ -x /usr/bin/update-desktop-database ]; then
-  update-desktop-database -q || true
-fi
-
-exit 0
-EOF
+          printf "#!/bin/sh\nset -e\n\n# 更新桌面菜单数据库\nif [ -x /usr/bin/update-desktop-database ]; then\n  update-desktop-database -q || true\nfi\n\nexit 0\n" > debian-pkg/DEBIAN/postrm
           
           # 设置权限
           chmod 755 debian-pkg/DEBIAN/postinst
@@ -288,94 +257,59 @@ EOF
           dpkg-deb --build --root-owner-group debian-pkg
           
           # 重命名Debian包
-          mv debian-pkg.deb iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
+          mv debian-pkg.deb iptux_${APP_VERSION}_${DEB_ARCH}.deb
           
           # 创建tar.gz部署包
           mkdir -p deploy
           cp -r pkg/* deploy/ 2>/dev/null || true
           
           # 添加安装脚本
-          cat > deploy/install.sh <<EOF
-#!/bin/bash
-# iptux 安装脚本
-
-# 检查是否以root运行
-if [ "\$(id -u)" != "0" ]; then
-  echo "请以root权限运行此脚本"
-  exit 1
-fi
-
-# 安装目录
-INSTALL_DIR="/usr/local"
-
-# 创建目录
-mkdir -p \$INSTALL_DIR/bin
-mkdir -p \$INSTALL_DIR/lib
-mkdir -p \$INSTALL_DIR/share
-
-# 复制文件
-echo "正在安装iptux..."
-cp -r usr/bin/* \$INSTALL_DIR/bin/ 2>/dev/null || true
-cp -r usr/lib/* \$INSTALL_DIR/lib/ 2>/dev/null || true
-cp -r usr/share/* \$INSTALL_DIR/share/ 2>/dev/null || true
-
-# 设置可执行权限
-find \$INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
-
-# 更新共享库缓存
-ldconfig
-
-echo "安装完成！iptux现在可以从命令行启动: iptux"
-EOF
+          printf "#!/bin/bash\n# iptux 安装脚本\n\n# 检查是否以root运行\nif [ \"\$(id -u)\" != \"0\" ]; then\n  echo \"请以root权限运行此脚本\"\n  exit 1\nfi\n\n# 安装目录\nINSTALL_DIR=\"/usr/local\"\n\n# 创建目录\nmkdir -p \$INSTALL_DIR/bin\nmkdir -p \$INSTALL_DIR/lib\nmkdir -p \$INSTALL_DIR/share\n\n# 复制文件\necho \"正在安装iptux...\"\ncp -r usr/bin/* \$INSTALL_DIR/bin/ 2>/dev/null || true\ncp -r usr/lib/* \$INSTALL_DIR/lib/ 2>/dev/null || true\ncp -r usr/share/* \$INSTALL_DIR/share/ 2>/dev/null || true\n\n# 设置可执行权限\nfind \$INSTALL_DIR/bin -type f -exec chmod +x {} \\; 2>/dev/null\n\n# 更新共享库缓存\nldconfig\n\necho \"安装完成！iptux现在可以从命令行启动: iptux\"\n" > deploy/install.sh
           
           chmod +x deploy/install.sh
           
           # 创建README
-          cat > deploy/README.md <<EOF
-# iptux ${{ github.event.inputs.target_arch }} 安装指南
-
-## Debian包安装方法（推荐）
-
-\`\`\`bash
-sudo apt install ./iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
-\`\`\`
-
-## 手动安装方法
-
-1. 解压安装包: \`tar xzf iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz\`
-2. 确保您正在 ${{ github.event.inputs.target_arch }} 架构的设备上安装
-3. 以root权限运行安装脚本: \`sudo ./install.sh\`
-
-## 所需依赖
-
-- libgtk-3-0
-- libglib2.0-0
-- libjsoncpp25 (或libjsoncpp24)
-- libsigc++-2.0-0v5
-- libgoogle-glog0v5
-- libayatana-appindicator3-1
-
-## 编译失败情况下的错误日志
-
-如果包中包含 \`usr/share/iptux/build_error.log\` 文件，表示编译过程中出现了错误。
-您可以查看该文件了解具体的错误原因。
-EOF
+          TARGET_ARCH="${{ github.event.inputs.target_arch }}"
+          printf "# iptux \$ARCH 安装指南\n\n## Debian包安装方法（推荐）\n\n\`\`\`bash\nsudo apt install ./iptux_\$VERSION_\$ARCH.deb\n\`\`\`\n\n## 手动安装方法\n\n1. 解压安装包: \`tar xzf iptux-Docker-\$ARCH.tar.gz\`\n2. 确保您正在 \$ARCH 架构的设备上安装\n3. 以root权限运行安装脚本: \`sudo ./install.sh\`\n\n## 所需依赖\n\n- libgtk-3-0\n- libglib2.0-0\n- libjsoncpp25 (或libjsoncpp24)\n- libsigc++-2.0-0v5\n- libgoogle-glog0v5\n- libayatana-appindicator3-1\n\n## 编译失败情况下的错误日志\n\n如果包中包含 \`usr/share/iptux/build_error.log\` 文件，表示编译过程中出现了错误。\n您可以查看该文件了解具体的错误原因。\n" > deploy/README.md
+          
+          # 替换README中的变量
+          sed -i "s/\$ARCH/${TARGET_ARCH}/g" deploy/README.md
+          sed -i "s/\$VERSION/${APP_VERSION}/g" deploy/README.md
           
           # 打包
           cd deploy
-          tar czf ../iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz *
+          tar czf ../iptux-Docker-${TARGET_ARCH}.tar.gz *
           cd ..
           
           # 显示最终生成的文件大小
           echo "最终生成的文件:"
-          ls -lh iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
-          ls -lh iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
+          ls -lh iptux_${APP_VERSION}_${DEB_ARCH}.deb
+          ls -lh iptux-Docker-${TARGET_ARCH}.tar.gz
           
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        run: |
+          # 重新设置架构变量
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            DEB_ARCH="arm64"
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            DEB_ARCH="armhf"
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            DEB_ARCH="riscv64"
+          fi
+          APP_VERSION="${{ env.APP_VERSION }}"
+          TARGET_ARCH="${{ github.event.inputs.target_arch }}"
+          
+          # 准备上传文件
+          ARTIFACTS="iptux_${APP_VERSION}_${DEB_ARCH}.deb iptux-Docker-${TARGET_ARCH}.tar.gz"
+          echo "即将上传的文件: $ARTIFACTS"
+          
+          # 创建临时文件存储路径
+          mkdir -p upload_dir
+          cp iptux_${APP_VERSION}_${DEB_ARCH}.deb upload_dir/
+          cp iptux-Docker-${TARGET_ARCH}.tar.gz upload_dir/
+          
+      - uses: actions/upload-artifact@v4
         with:
-          name: iptux-docker-${{ github.event.inputs.target_arch }}-packages
-          path: |
-            iptux_${{ env.APP_VERSION }}_${{ env.DEB_ARCH }}.deb
-            iptux-docker-${{ github.event.inputs.target_arch }}.tar.gz
-          retention-days: 7 
+          name: iptux-Docker-${{ github.event.inputs.target_arch }}-packages
+          path: upload_dir/*
+          retention-days: 7
