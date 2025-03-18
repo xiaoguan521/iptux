@@ -278,6 +278,9 @@ jobs:
           # 设置安装脚本为可执行
           chmod +x deploy/install.sh
           
+          # 设置目标架构变量
+          TARGET_ARCH="${{ github.event.inputs.target_arch }}"
+          
           # 打包
           cd deploy
           tar czf ../iptux-Docker-${TARGET_ARCH}.tar.gz *
