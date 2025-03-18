@@ -95,12 +95,6 @@ jobs:
             find /usr -name "libjsoncpp*" 2>/dev/null || echo "未找到jsoncpp库文件"
             find /usr -name "*jsoncpp*.pc" 2>/dev/null || echo "未找到jsoncpp的pkg-config文件"
             
-            # 创建降低优化级别的meson_options.txt
-            OPTION1="option(\"optimization\", type: \"combo\", choices: [\"0\", \"g\", \"1\", \"2\", \"3\", \"s\"], value: \"1\", description: \"Optimization level\")"
-            OPTION2="option(\"werror\", type: \"boolean\", value: false, description: \"Treat warnings as errors\")"
-            echo "$OPTION1" > meson_options.txt
-            echo "$OPTION2" >> meson_options.txt
-            
             # 显示环境变量
             echo "编译环境变量:"
             env | grep -E "PATH|PKG|CFLAGS|LDFLAGS"
