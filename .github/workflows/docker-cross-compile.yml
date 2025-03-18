@@ -120,7 +120,8 @@ jobs:
                 -Doptimization=0 \
                 -Dwarning_level=0 \
                 -Dcpp_std=c++11 \
-                --cross-file cross_opts.txt
+                --cross-file cross_opts.txt \
+                -Dpkg_config_path=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
             
             monitor_memory
             
@@ -135,7 +136,7 @@ jobs:
             monitor_memory
             CXXFLAGS="-O0 -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11" \
             CFLAGS="-O0 -fno-omit-frame-pointer -D_GLIBCXX_USE_CXX11_ABI=0" \
-            LDFLAGS="-static-libstdc++ -static-libgcc" \
+            LDFLAGS="-static-libstdc++ -static-libgcc -ljsoncpp" \
             CC="gcc-7" CXX="g++-7" \
             ninja -C build -j1
             
