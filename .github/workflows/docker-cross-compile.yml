@@ -25,81 +25,70 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Enable QEMU support
+      # 设置目标架构变量
+      - name: Set architecture variables
+        id: set-arch
         run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          # 检查QEMU是否正确安装
-          ls -la /proc/sys/fs/binfmt_misc/
-          echo "QEMU支持已启用"
-      
-      - name: Cross-compile with Docker
-        run: |
-          # 选择合适的Docker镜像和平台
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
-            DOCKER_IMAGE="ubuntu:22.04"
-            DOCKER_PLATFORM="linux/arm64"
-            DEB_ARCH="arm64"
+            echo "ARCH=aarch64" >> $GITHUB_OUTPUT
+            echo "DISTRO=ubuntu20.04" >> $GITHUB_OUTPUT
+            echo "DEB_ARCH=arm64" >> $GITHUB_OUTPUT
+            echo "TARGET_ARCH=aarch64" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
-            DOCKER_IMAGE="ubuntu:22.04"
-            DOCKER_PLATFORM="linux/arm/v7"
-            DEB_ARCH="armhf"
+            echo "ARCH=armv7" >> $GITHUB_OUTPUT
+            echo "DISTRO=ubuntu20.04" >> $GITHUB_OUTPUT
+            echo "DEB_ARCH=armhf" >> $GITHUB_OUTPUT
+            echo "TARGET_ARCH=arm32v7" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
-            DOCKER_IMAGE="ubuntu:22.04"
-            DOCKER_PLATFORM="linux/riscv64"
-            DEB_ARCH="riscv64"
+            echo "ARCH=riscv64" >> $GITHUB_OUTPUT
+            echo "DISTRO=ubuntu20.04" >> $GITHUB_OUTPUT
+            echo "DEB_ARCH=riscv64" >> $GITHUB_OUTPUT
+            echo "TARGET_ARCH=riscv64" >> $GITHUB_OUTPUT
           fi
-          
-          echo "使用镜像: $DOCKER_IMAGE 平台: $DOCKER_PLATFORM 架构: $DEB_ARCH"
           echo "DEB_ARCH=$DEB_ARCH" >> $GITHUB_ENV
+      
+      # 使用 run-on-arch-action 进行跨平台编译
+      - uses: uraimo/run-on-arch-action@v2
+        name: Build with run-on-arch-action
+        with:
+          arch: ${{ steps.set-arch.outputs.ARCH }}
+          distro: ${{ steps.set-arch.outputs.DISTRO }}
+          githubToken: ${{ github.token }}
           
-          # 预先拉取镜像以验证Docker运行正常
-          echo "预拉取Docker镜像..."
-          docker pull --platform $DOCKER_PLATFORM $DOCKER_IMAGE
+          # 设置内存限制
+          dockerRunArgs: |
+            --memory=4g
+            --memory-swap=4g
           
-          # 验证Docker能否正常启动目标架构容器
-          echo "验证Docker平台支持..."
-          docker run --rm --platform $DOCKER_PLATFORM $DOCKER_IMAGE uname -a || {
-            echo "错误：无法运行目标平台容器，可能QEMU支持未正确配置"
-            exit 1
-          }
+          # 安装依赖
+          install: |
+            apt-get update -q -y
+            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
           
-          # 在目标架构的容器中直接编译
-          docker run --rm -v $(pwd):/workspace -w /workspace \
-            --platform $DOCKER_PLATFORM \
-            --memory=12g --memory-swap=16g \
-            $DOCKER_IMAGE bash -c '
-            set -ex
-            
-            # 输出系统信息进行验证
+          # 运行编译命令 - 与 build-package.yml 完全一致
+          run: |
+            # 输出系统信息
             echo "当前系统架构:"
             uname -a
             
             # 显示可用内存
             free -h
             
-            # 更新并安装依赖
-            apt-get update
-            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
-            
-            # 验证关键工具已安装
-            which g++ || { echo "错误：g++ 未找到"; exit 1; }
-            which meson || { echo "错误：meson 未找到"; exit 1; }
-            
             # 显示库信息和pkg-config路径
             echo "验证库信息:"
             pkg-config --modversion jsoncpp || echo "jsoncpp不在pkg-config路径中"
             pkg-config --cflags --libs jsoncpp || echo "jsoncpp pkg-config无法获取编译参数"
             
-            # 配置项目 - 与build-package.yml完全一致
+            # 配置项目
             echo "===== 开始Meson配置 ======"
             meson setup build \
                 --buildtype=release
             
-            # 编译项目 - 使用与build-package.yml完全一致的命令
+            # 编译项目
             echo "===== 开始Ninja编译 ====="
             ninja -C build
             
-            # 创建安装目录并安装 - 与build-package.yml完全一致
+            # 创建安装目录并安装
             echo "编译成功，开始安装..."
             mkdir -p pkg
             DESTDIR=$(pwd)/pkg meson install -C build
@@ -108,9 +97,54 @@ jobs:
             echo "编译结果目录结构:"
             find pkg -type f -exec ls -lh {} \;
             du -sh pkg/
-          '
+      
+      # 收集依赖库
+      - uses: uraimo/run-on-arch-action@v2
+        name: Collect Dependencies
+        with:
+          arch: ${{ steps.set-arch.outputs.ARCH }}
+          distro: ${{ steps.set-arch.outputs.DISTRO }}
+          githubToken: ${{ github.token }}
           
-          # 检查编译结果
+          # 设置卷挂载用于收集依赖
+          setup: |
+            mkdir -p "${PWD}/deps_collected"
+          
+          # 设置内存限制和卷挂载
+          dockerRunArgs: |
+            --memory=4g
+            --memory-swap=4g
+            --volume "${PWD}/deps_collected:/deps_out"
+          
+          # 安装依赖
+          install: |
+            apt-get update -q -y
+            apt-get install -y --no-install-recommends ${{ env.DEB_PKGS }}
+          
+          # 运行命令收集依赖库
+          run: |
+            # 创建依赖目录
+            mkdir -p /deps
+            
+            # 收集常见依赖库
+            echo "收集依赖库..."
+            find /usr/lib -name "libjsoncpp.so*" -exec cp -v {} /deps/ \;
+            find /usr/lib -name "libsigc-2.0.so*" -exec cp -v {} /deps/ \;
+            find /usr/lib -name "libglog.so*" -exec cp -v {} /deps/ \;
+            find /usr/lib -name "libayatana-appindicator3.so*" -exec cp -v {} /deps/ \;
+            
+            # 显示收集到的依赖
+            echo "收集到的依赖库:"
+            ls -la /deps/
+            
+            # 复制到卷挂载点
+            cp -rv /deps/* /deps_out/
+            echo "依赖已复制到宿主机"
+            ls -la /deps_out/
+      
+      # 检查编译结果
+      - name: Check build results
+        run: |
           if [ ! -d "pkg/usr" ]; then
             echo "错误：编译过程未生成有效结构，创建基本结构..."
             mkdir -p pkg/usr/bin
@@ -122,7 +156,8 @@ jobs:
             find pkg -type f -exec ls -lh {} \;
             du -sh pkg/
           fi
-          
+      
+      # 创建Debian包部分 - 保持不变
       - name: Create Debian Package
         run: |
           echo "开始创建Debian软件包..."
@@ -150,8 +185,19 @@ jobs:
           mkdir -p debian-pkg/usr
           cp -r pkg/usr debian-pkg/
           
-          # 创建control文件
-          printf "Package: iptux\nVersion: %s\nSection: net\nPriority: optional\nArchitecture: %s\nMaintainer: IPTUX Team <example@example.com>\nDescription: IP Messenger client for Linux\n IPTUX is an IP Messenger client for Linux. It is compatible with\n IPMsg, a popular message client in China.\nDepends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1\n" "$APP_VERSION" "$DEB_ARCH" > debian-pkg/DEBIAN/control
+          # 添加依赖库
+          echo "添加收集到的依赖库到包中..."
+          mkdir -p debian-pkg/usr/lib/iptux/deps
+          if [ -d "deps_collected" ] && [ "$(ls -A deps_collected)" ]; then
+            cp -rv deps_collected/* debian-pkg/usr/lib/iptux/deps/ || true
+            echo "依赖库已复制到包中:"
+            ls -la debian-pkg/usr/lib/iptux/deps/
+          else
+            echo "警告: 没有找到依赖库或依赖库目录为空"
+          fi
+          
+          # 创建control文件 - 减少依赖要求，因为我们已经捆绑了部分依赖
+          printf "Package: iptux\nVersion: %s\nSection: net\nPriority: optional\nArchitecture: %s\nMaintainer: IPTUX Team <example@example.com>\nDescription: IP Messenger client for Linux\n IPTUX is an IP Messenger client for Linux. It is compatible with\n IPMsg, a popular message client in China.\nDepends: libgtk-3-0, libglib2.0-0\n" "$APP_VERSION" "$DEB_ARCH" > debian-pkg/DEBIAN/control
           
           # 创建postinst脚本
           echo '#!/bin/sh' > debian-pkg/DEBIAN/postinst
@@ -209,6 +255,7 @@ jobs:
           echo 'mkdir -p $INSTALL_DIR/bin' >> deploy/install.sh
           echo 'mkdir -p $INSTALL_DIR/lib' >> deploy/install.sh
           echo 'mkdir -p $INSTALL_DIR/share' >> deploy/install.sh
+          echo 'mkdir -p $INSTALL_DIR/lib/iptux/deps' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 复制文件' >> deploy/install.sh
           echo 'echo "正在安装iptux..."' >> deploy/install.sh
@@ -218,6 +265,12 @@ jobs:
           echo '' >> deploy/install.sh
           echo '# 设置可执行权限' >> deploy/install.sh
           echo 'find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null' >> deploy/install.sh
+          echo '' >> deploy/install.sh
+          echo '# 创建依赖库配置' >> deploy/install.sh
+          echo 'if [ -d "$INSTALL_DIR/lib/iptux/deps" ]; then' >> deploy/install.sh
+          echo '  echo "$INSTALL_DIR/lib/iptux/deps" > /etc/ld.so.conf.d/iptux-deps.conf' >> deploy/install.sh
+          echo '  ldconfig' >> deploy/install.sh
+          echo 'fi' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 更新共享库缓存' >> deploy/install.sh
           echo 'ldconfig' >> deploy/install.sh
@@ -257,7 +310,8 @@ jobs:
           echo "最终生成的文件:"
           ls -lh iptux_${APP_VERSION}_${DEB_ARCH}.deb
           ls -lh iptux-Docker-${TARGET_ARCH}.tar.gz
-          
+      
+      # 上传构建产物
       - name: Upload artifacts
         run: |
           # 重新设置架构变量
@@ -281,7 +335,7 @@ jobs:
           mkdir -p upload_dir
           cp iptux_${APP_VERSION}_${DEB_ARCH}.deb upload_dir/
           cp iptux-Docker-${TARGET_ARCH}.tar.gz upload_dir/
-          
+      
       - uses: actions/upload-artifact@v4
         with:
           name: iptux-Docker-${{ github.event.inputs.target_arch }}-packages
