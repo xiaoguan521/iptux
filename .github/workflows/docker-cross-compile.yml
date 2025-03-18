@@ -111,7 +111,7 @@ jobs:
             echo "[properties]" > cross_opts.txt
             echo "c_args = ['-O0', '-D_GLIBCXX_USE_CXX11_ABI=0', '-fno-stack-protector']" >> cross_opts.txt
             echo "cpp_args = ['-O0', '-D_GLIBCXX_USE_CXX11_ABI=0', '-std=c++11', '-fno-stack-protector']" >> cross_opts.txt
-            echo "cpp_link_args = ['-static-libstdc++', '-static-libgcc', '-Wl,--wrap=memcpy']" >> cross_opts.txt
+            echo "cpp_link_args = ['-static-libstdc++', '-static-libgcc']" >> cross_opts.txt
             
             # 配置使用自定义选项，禁用测试
             CC=gcc-7 CXX=g++-7 meson setup build \
