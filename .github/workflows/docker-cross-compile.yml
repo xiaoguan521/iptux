@@ -96,8 +96,8 @@ jobs:
             find /usr -name "*jsoncpp*.pc" 2>/dev/null || echo "未找到jsoncpp的pkg-config文件"
             
             # 创建降低优化级别的meson_options.txt
-            echo "option('\''optimization'\'', type: '\''combo'\'', choices: ['\''0'\'', '\''g'\'', '\''1'\'', '\''2'\'', '\''3'\'', '\''s'\''], value: '\''1'\'', description: '\''Optimization level'\'')" > meson_options.txt
-            echo "option('\''werror'\'', type: '\''boolean'\'', value: false, description: '\''Treat warnings as errors'\'')" >> meson_options.txt
+            echo "option('optimization', type: 'combo', choices: ['0', 'g', '1', '2', '3', 's'], value: '1', description: 'Optimization level')" > meson_options.txt
+            echo "option('werror', type: 'boolean', value: false, description: 'Treat warnings as errors')" >> meson_options.txt
             
             # 显示环境变量
             echo "编译环境变量:"
@@ -191,12 +191,12 @@ jobs:
             if ! pkg-config --exists jsoncpp; then
               echo "未找到jsoncpp.pc，创建一个临时版本..."
               cat > jsoncpp.pc << 'EOF'
-Name: jsoncpp
-Description: A JSON implementation in C++
-Version: 1.9.5
-Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
-Cflags: -I/usr/include/jsoncpp
-EOF
+              Name: jsoncpp
+              Description: A JSON implementation in C++
+              Version: 1.9.5
+              Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp
+              Cflags: -I/usr/include/jsoncpp
+              EOF
               
               # 输出创建的pc文件
               echo "创建的jsoncpp.pc内容:"
@@ -246,47 +246,36 @@ EOF
           cp -r pkg/usr debian-pkg/
           
           # 创建control文件
-          cat > debian-pkg/DEBIAN/control << EOF
-Package: iptux
-Version: ${APP_VERSION}
-Section: net
-Priority: optional
-Architecture: ${DEB_ARCH}
-Maintainer: IPTUX Team <example@example.com>
-Description: IP Messenger client for Linux
- IPTUX is an IP Messenger client for Linux. It is compatible with
- IPMsg, a popular message client in China.
-Depends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1
-EOF
+          printf "Package: iptux\nVersion: %s\nSection: net\nPriority: optional\nArchitecture: %s\nMaintainer: IPTUX Team <example@example.com>\nDescription: IP Messenger client for Linux\n IPTUX is an IP Messenger client for Linux. It is compatible with\n IPMsg, a popular message client in China.\nDepends: libgtk-3-0, libglib2.0-0, libjsoncpp25 | libjsoncpp24, libsigc++-2.0-0v5, libgoogle-glog0v5, libayatana-appindicator3-1\n" "$APP_VERSION" "$DEB_ARCH" > debian-pkg/DEBIAN/control
           
           # 创建postinst脚本
           cat > debian-pkg/DEBIAN/postinst << 'EOF'
-#!/bin/sh
-set -e
+          #!/bin/sh
+          set -e
 
-# 更新共享库缓存
-ldconfig
+          # 更新共享库缓存
+          ldconfig
 
-# 更新桌面菜单数据库
-if [ -x /usr/bin/update-desktop-database ]; then
-  update-desktop-database -q || true
-fi
+          # 更新桌面菜单数据库
+          if [ -x /usr/bin/update-desktop-database ]; then
+            update-desktop-database -q || true
+          fi
 
-exit 0
-EOF
+          exit 0
+          EOF
           
           # 创建postrm脚本
           cat > debian-pkg/DEBIAN/postrm << 'EOF'
-#!/bin/sh
-set -e
+          #!/bin/sh
+          set -e
 
-# 更新桌面菜单数据库
-if [ -x /usr/bin/update-desktop-database ]; then
-  update-desktop-database -q || true
-fi
+          # 更新桌面菜单数据库
+          if [ -x /usr/bin/update-desktop-database ]; then
+            update-desktop-database -q || true
+          fi
 
-exit 0
-EOF
+          exit 0
+          EOF
           
           # 设置权限
           chmod 755 debian-pkg/DEBIAN/postinst
@@ -304,71 +293,71 @@ EOF
           
           # 添加安装脚本
           cat > deploy/install.sh << 'EOF'
-#!/bin/bash
-# iptux 安装脚本
+          #!/bin/bash
+          # iptux 安装脚本
 
-# 检查是否以root运行
-if [ "$(id -u)" != "0" ]; then
-  echo "请以root权限运行此脚本"
-  exit 1
-fi
+          # 检查是否以root运行
+          if [ "$(id -u)" != "0" ]; then
+            echo "请以root权限运行此脚本"
+            exit 1
+          fi
 
-# 安装目录
-INSTALL_DIR="/usr/local"
+          # 安装目录
+          INSTALL_DIR="/usr/local"
 
-# 创建目录
-mkdir -p $INSTALL_DIR/bin
-mkdir -p $INSTALL_DIR/lib
-mkdir -p $INSTALL_DIR/share
+          # 创建目录
+          mkdir -p $INSTALL_DIR/bin
+          mkdir -p $INSTALL_DIR/lib
+          mkdir -p $INSTALL_DIR/share
 
-# 复制文件
-echo "正在安装iptux..."
-cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
-cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
-cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
+          # 复制文件
+          echo "正在安装iptux..."
+          cp -r usr/bin/* $INSTALL_DIR/bin/ 2>/dev/null || true
+          cp -r usr/lib/* $INSTALL_DIR/lib/ 2>/dev/null || true
+          cp -r usr/share/* $INSTALL_DIR/share/ 2>/dev/null || true
 
-# 设置可执行权限
-find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
+          # 设置可执行权限
+          find $INSTALL_DIR/bin -type f -exec chmod +x {} \; 2>/dev/null
 
-# 更新共享库缓存
-ldconfig
+          # 更新共享库缓存
+          ldconfig
 
-echo "安装完成！iptux现在可以从命令行启动: iptux"
-EOF
+          echo "安装完成！iptux现在可以从命令行启动: iptux"
+          EOF
           
           chmod +x deploy/install.sh
           
           # 创建README
           TARGET_ARCH="${{ github.event.inputs.target_arch }}"
           cat > deploy/README.md << EOF
-# iptux ${TARGET_ARCH} 安装指南
+          # iptux ${TARGET_ARCH} 安装指南
 
-## Debian包安装方法（推荐）
+          ## Debian包安装方法（推荐）
 
-\`\`\`bash
-sudo apt install ./iptux_${APP_VERSION}_${DEB_ARCH}.deb
-\`\`\`
+          \`\`\`bash
+          sudo apt install ./iptux_${APP_VERSION}_${DEB_ARCH}.deb
+          \`\`\`
 
-## 手动安装方法
+          ## 手动安装方法
 
-1. 解压安装包: \`tar xzf iptux-Docker-${TARGET_ARCH}.tar.gz\`
-2. 确保您正在 ${TARGET_ARCH} 架构的设备上安装
-3. 以root权限运行安装脚本: \`sudo ./install.sh\`
+          1. 解压安装包: \`tar xzf iptux-Docker-${TARGET_ARCH}.tar.gz\`
+          2. 确保您正在 ${TARGET_ARCH} 架构的设备上安装
+          3. 以root权限运行安装脚本: \`sudo ./install.sh\`
 
-## 所需依赖
+          ## 所需依赖
 
-- libgtk-3-0
-- libglib2.0-0
-- libjsoncpp25 (或libjsoncpp24)
-- libsigc++-2.0-0v5
-- libgoogle-glog0v5
-- libayatana-appindicator3-1
+          - libgtk-3-0
+          - libglib2.0-0
+          - libjsoncpp25 (或libjsoncpp24)
+          - libsigc++-2.0-0v5
+          - libgoogle-glog0v5
+          - libayatana-appindicator3-1
 
-## 编译失败情况下的错误日志
+          ## 编译失败情况下的错误日志
 
-如果包中包含 \`usr/share/iptux/build_error.log\` 文件，表示编译过程中出现了错误。
-您可以查看该文件了解具体的错误原因。
-EOF
+          如果包中包含 \`usr/share/iptux/build_error.log\` 文件，表示编译过程中出现了错误。
+          您可以查看该文件了解具体的错误原因。
+          EOF
           
           # 打包
           cd deploy
