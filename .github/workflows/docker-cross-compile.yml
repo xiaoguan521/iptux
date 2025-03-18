@@ -96,15 +96,17 @@ jobs:
             find /usr -name "*jsoncpp*.pc" 2>/dev/null || echo "未找到jsoncpp的pkg-config文件"
             
             # 创建降低优化级别的meson_options.txt
-            echo 'option\("optimization", type: "combo", choices: \["0", "g", "1", "2", "3", "s"\], value: "1", description: "Optimization level"\)' > meson_options.txt
-            echo 'option\("werror", type: "boolean", value: false, description: "Treat warnings as errors"\)' >> meson_options.txt
+            OPTION1="option(\"optimization\", type: \"combo\", choices: [\"0\", \"g\", \"1\", \"2\", \"3\", \"s\"], value: \"1\", description: \"Optimization level\")"
+            OPTION2="option(\"werror\", type: \"boolean\", value: false, description: \"Treat warnings as errors\")"
+            echo "$OPTION1" > meson_options.txt
+            echo "$OPTION2" >> meson_options.txt
             
             # 显示环境变量
             echo "编译环境变量:"
             env | grep -E "PATH|PKG|CFLAGS|LDFLAGS"
             
             # 配置项目
-            echo "===== 开始Meson配置 ====="
+            echo "===== 开始Meson配置 ======"
             meson setup build \
               --buildtype=release \
               -Doptimization=1 \
@@ -132,7 +134,7 @@ jobs:
                 
                 # 检查段错误
                 if grep -qi "segmentation fault" ninja_build_log.txt; then
-                    echo "错误：编译过程中发生段错误\(Segmentation Fault\)"
+                    echo "错误：编译过程中发生段错误(Segmentation Fault)"
                     echo "最后编译的文件:"
                     tail -n 30 ninja_build_log.txt
                     
@@ -145,7 +147,7 @@ jobs:
                     echo "错误：编译失败，查看日志获取更多信息"
                 fi
                 
-                echo "创建基本包结构...";
+                echo "创建基本包结构..."
                 mkdir -p pkg/usr/bin
                 echo "#!/bin/bash" > pkg/usr/bin/iptux
                 echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
@@ -169,7 +171,7 @@ jobs:
             DESTDIR=/workspace/pkg meson install -C build > install_log.txt 2>&1 || {
               echo "=== 安装日志 ==="
               cat install_log.txt
-              echo "安装失败，确保基本目录结构存在...";
+              echo "安装失败，确保基本目录结构存在..."
               mkdir -p /workspace/pkg/usr/bin
               if [ -f build/src/main/iptux ]; then
                 cp build/src/main/iptux /workspace/pkg/usr/bin/
@@ -190,11 +192,17 @@ jobs:
             echo "检查是否需要创建jsoncpp.pc..."
             if ! pkg-config --exists jsoncpp; then
               echo "未找到jsoncpp.pc，创建一个临时版本..."
-              echo "Name: jsoncpp" > jsoncpp.pc
-              echo "Description: A JSON implementation in C++" >> jsoncpp.pc
-              echo "Version: 1.9.5" >> jsoncpp.pc
-              echo "Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp" >> jsoncpp.pc
-              echo "Cflags: -I/usr/include/jsoncpp" >> jsoncpp.pc
+              PC_LINE1="Name: jsoncpp"
+              PC_LINE2="Description: A JSON implementation in C++"
+              PC_LINE3="Version: 1.9.5" 
+              PC_LINE4="Libs: -L/usr/lib/aarch64-linux-gnu -ljsoncpp"
+              PC_LINE5="Cflags: -I/usr/include/jsoncpp"
+              
+              echo "$PC_LINE1" > jsoncpp.pc
+              echo "$PC_LINE2" >> jsoncpp.pc
+              echo "$PC_LINE3" >> jsoncpp.pc
+              echo "$PC_LINE4" >> jsoncpp.pc
+              echo "$PC_LINE5" >> jsoncpp.pc
               
               # 输出创建的pc文件
               echo "创建的jsoncpp.pc内容:"
@@ -290,7 +298,7 @@ jobs:
           echo '# iptux 安装脚本' >> deploy/install.sh
           echo '' >> deploy/install.sh
           echo '# 检查是否以root运行' >> deploy/install.sh
-          echo 'if [ "\$(id -u)" != "0" ]; then' >> deploy/install.sh
+          echo 'if [ "$(id -u)" != "0" ]; then' >> deploy/install.sh
           echo '  echo "请以root权限运行此脚本"' >> deploy/install.sh
           echo '  exit 1' >> deploy/install.sh
           echo 'fi' >> deploy/install.sh
