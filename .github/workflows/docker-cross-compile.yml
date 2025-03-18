@@ -107,8 +107,7 @@ jobs:
             meson setup build \
               --buildtype=release \
               -Doptimization=1 \
-              -Dwerror=false \
-              --verbose > meson_setup_log.txt 2>&1 || {
+              -Dwerror=false > meson_setup_log.txt 2>&1 || {
                 echo "=== Meson配置日志 ==="
                 cat meson_setup_log.txt
                 echo "尝试降低优化级别重新配置..."
@@ -116,8 +115,7 @@ jobs:
                   --buildtype=release \
                   -Doptimization=0 \
                   -Dauto_features=disabled \
-                  -Dwerror=false \
-                  --verbose > meson_setup_retry_log.txt 2>&1 || {
+                  -Dwerror=false > meson_setup_retry_log.txt 2>&1 || {
                     echo "=== Meson第二次配置日志 ==="
                     cat meson_setup_retry_log.txt
                     echo "错误：Meson配置失败"
