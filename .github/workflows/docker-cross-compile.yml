@@ -92,22 +92,11 @@ jobs:
             
             # 配置项目 - 简化配置，参照build-package.yml
             echo "===== 开始Meson配置 ======"
-            meson setup build --buildtype=release -Doptimization=0 -Dwerror=false -Dwarning_level=0 -Dtests=false
+            meson setup build --buildtype=release -Dwerror=false
             
-            # RecvFile.cpp可能会导致编译器段错误，尝试提前对其应用特殊处理
-            echo "对RecvFile.cpp应用特殊优化设置"
-            if [ -f src/iptux-core/internal/RecvFile.cpp ]; then
-              echo "找到RecvFile.cpp，应用-O0优化"
-              # 创建.ccache目录以避免部分警告
-              mkdir -p ~/.ccache
-              # 为RecvFile.cpp单独创建一个编译命令
-              TMP_COMPILE_COMMAND="g++ -O0 -g -c src/iptux-core/internal/RecvFile.cpp -o /tmp/RecvFile.o || true"
-              echo "将在构建前尝试：$TMP_COMPILE_COMMAND"
-            fi
-            
-            # 编译项目 - 使用简单的ninja命令，不捕获输出
+            # 编译项目 - 使用简单的ninja命令
             echo "===== 开始Ninja编译 ====="
-            MALLOC_ARENA_MAX=4 ninja -C build -j1 || {
+            ninja -C build || {
                 echo "编译失败，创建基本包结构..."
                 mkdir -p pkg/usr/bin
                 echo "#!/bin/bash" > pkg/usr/bin/iptux
@@ -124,17 +113,17 @@ jobs:
             
             # 安装到临时目录
             mkdir -p pkg
-            DESTDIR=/workspace/pkg meson install -C build || {
+            DESTDIR=$(pwd)/pkg meson install -C build || {
               echo "安装失败，确保基本目录结构存在..."
-              mkdir -p /workspace/pkg/usr/bin
+              mkdir -p pkg/usr/bin
               if [ -f build/src/main/iptux ]; then
-                cp build/src/main/iptux /workspace/pkg/usr/bin/
-                chmod +x /workspace/pkg/usr/bin/iptux
+                cp build/src/main/iptux pkg/usr/bin/
+                chmod +x pkg/usr/bin/iptux
               else
                 echo "未找到编译好的iptux二进制文件"
-                echo "#!/bin/bash" > /workspace/pkg/usr/bin/iptux
-                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> /workspace/pkg/usr/bin/iptux
-                chmod +x /workspace/pkg/usr/bin/iptux
+                echo "#!/bin/bash" > pkg/usr/bin/iptux
+                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
+                chmod +x pkg/usr/bin/iptux
               fi
             }
             
@@ -164,14 +153,18 @@ jobs:
           # 重新设置架构变量
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
             DEB_ARCH="arm64"
+            TARGET_ARCH="aarch64"
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
             DEB_ARCH="armhf"
+            TARGET_ARCH="arm32v7"
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             DEB_ARCH="riscv64"
+            TARGET_ARCH="riscv64"
           fi
           
           # 设置版本变量
           APP_VERSION="${{ env.APP_VERSION }}"
+          echo "TARGET_ARCH=$TARGET_ARCH"
           
           # 设置Debian包目录结构
           mkdir -p debian-pkg/DEBIAN
@@ -278,9 +271,6 @@ jobs:
           # 设置安装脚本为可执行
           chmod +x deploy/install.sh
           
-          # 设置目标架构变量
-          TARGET_ARCH="${{ github.event.inputs.target_arch }}"
-          
           # 打包
           cd deploy
           tar czf ../iptux-Docker-${TARGET_ARCH}.tar.gz *
@@ -296,13 +286,15 @@ jobs:
           # 重新设置架构变量
           if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
             DEB_ARCH="arm64"
+            TARGET_ARCH="aarch64"
           elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
             DEB_ARCH="armhf"
+            TARGET_ARCH="arm32v7"
           elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
             DEB_ARCH="riscv64"
+            TARGET_ARCH="riscv64"
           fi
           APP_VERSION="${{ env.APP_VERSION }}"
-          TARGET_ARCH="${{ github.event.inputs.target_arch }}"
           
           # 准备上传文件
           ARTIFACTS="iptux_${APP_VERSION}_${DEB_ARCH}.deb iptux-Docker-${TARGET_ARCH}.tar.gz"
