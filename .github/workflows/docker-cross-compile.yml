@@ -55,10 +55,10 @@ jobs:
           distro: ${{ steps.set-arch.outputs.DISTRO }}
           githubToken: ${{ github.token }}
           
-          # 设置内存限制
+          # 设置内存限制 - 增加到12GB
           dockerRunArgs: |
-            --memory=4g
-            --memory-swap=4g
+            --memory=12g
+            --memory-swap=16g
           
           # 安装依赖
           install: |
@@ -82,7 +82,10 @@ jobs:
             # 配置项目
             echo "===== 开始Meson配置 ======"
             meson setup build \
-                --buildtype=release
+                --buildtype=release \
+                -Doptimization=1 \
+                -Dwarning_level=0 \
+                -Dtests=false
             
             # 编译项目
             echo "===== 开始Ninja编译 ====="
@@ -110,10 +113,10 @@ jobs:
           setup: |
             mkdir -p "${PWD}/deps_collected"
           
-          # 设置内存限制和卷挂载
+          # 设置内存限制和卷挂载 - 增加内存限制
           dockerRunArgs: |
-            --memory=4g
-            --memory-swap=4g
+            --memory=12g
+            --memory-swap=16g
             --volume "${PWD}/deps_collected:/deps_out"
           
           # 安装依赖
