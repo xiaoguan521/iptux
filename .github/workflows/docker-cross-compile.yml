@@ -90,42 +90,19 @@ jobs:
             pkg-config --modversion jsoncpp || echo "jsoncpp不在pkg-config路径中"
             pkg-config --cflags --libs jsoncpp || echo "jsoncpp pkg-config无法获取编译参数"
             
-            # 配置项目 - 简化配置，参照build-package.yml
+            # 配置项目 - 与build-package.yml完全一致
             echo "===== 开始Meson配置 ======"
-            meson setup build --buildtype=release -Dwerror=false
+            meson setup build \
+                --buildtype=release
             
-            # 编译项目 - 使用简单的ninja命令
+            # 编译项目 - 使用与build-package.yml完全一致的命令
             echo "===== 开始Ninja编译 ====="
-            ninja -C build || {
-                echo "编译失败，创建基本包结构..."
-                mkdir -p pkg/usr/bin
-                echo "#!/bin/bash" > pkg/usr/bin/iptux
-                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
-                chmod +x pkg/usr/bin/iptux
-                
-                # 保存编译日志到输出包
-                mkdir -p pkg/usr/share/iptux
-                echo "编译失败" > pkg/usr/share/iptux/build_error.log
-                exit 0
-            }
+            ninja -C build
             
+            # 创建安装目录并安装 - 与build-package.yml完全一致
             echo "编译成功，开始安装..."
-            
-            # 安装到临时目录
             mkdir -p pkg
-            DESTDIR=$(pwd)/pkg meson install -C build || {
-              echo "安装失败，确保基本目录结构存在..."
-              mkdir -p pkg/usr/bin
-              if [ -f build/src/main/iptux ]; then
-                cp build/src/main/iptux pkg/usr/bin/
-                chmod +x pkg/usr/bin/iptux
-              else
-                echo "未找到编译好的iptux二进制文件"
-                echo "#!/bin/bash" > pkg/usr/bin/iptux
-                echo "echo \"This is a placeholder binary. The actual compilation failed.\"" >> pkg/usr/bin/iptux
-                chmod +x pkg/usr/bin/iptux
-              fi
-            }
+            DESTDIR=$(pwd)/pkg meson install -C build
             
             # 显示编译结果目录结构
             echo "编译结果目录结构:"
