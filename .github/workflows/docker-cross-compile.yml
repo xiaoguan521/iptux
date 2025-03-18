@@ -83,7 +83,7 @@ jobs:
             echo "===== 开始Meson配置 ======"
             meson setup build \
                 --buildtype=release \
-                -Doptimization=1 \
+                -Doptimization=0 \
                 -Dwarning_level=0 \
                 -Dtests=false
             
