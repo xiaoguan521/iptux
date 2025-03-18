@@ -113,15 +113,14 @@ jobs:
             
             # 编译项目
             echo "===== 开始Ninja编译 ====="
-            # 尝试仅编译主程序，避开测试目标
-            CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1 iptux
+            # 首先列出所有可用的构建目标
+            echo "列出所有可用的构建目标:"
+            ninja -C build -t targets | grep -v "phony" || true
             
-            # 如果特定目标编译失败，尝试完整编译
-            if [ $? -ne 0 ]; then
-              echo "特定目标编译失败，尝试完整编译..."
-              monitor_memory
-              CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1
-            fi
+            # 尝试编译主程序
+            echo "开始编译主程序..."
+            monitor_memory
+            CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1
             
             monitor_memory
             
