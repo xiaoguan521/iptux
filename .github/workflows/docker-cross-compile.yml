@@ -74,6 +74,19 @@ jobs:
             # 显示可用内存
             free -h
             
+            # 设置内存监控函数
+            monitor_memory() {
+              echo "=============== 内存监控 $(date) ==============="
+              free -h
+              echo "进程内存使用情况:"
+              ps -o pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -n 10
+              echo "================================================"
+            }
+            
+            # 启动后台内存监控 - 每30秒记录一次
+            (while true; do monitor_memory; sleep 30; done) &
+            MONITOR_PID=$!
+            
             # 显示库信息和pkg-config路径
             echo "验证库信息:"
             pkg-config --modversion jsoncpp || echo "jsoncpp不在pkg-config路径中"
@@ -81,6 +94,7 @@ jobs:
             
             # 配置项目
             echo "===== 开始Meson配置 ======"
+            monitor_memory
             
             # 创建编译器选项文件
             echo "[properties]" > cross_opts.txt
@@ -95,10 +109,24 @@ jobs:
                 -Dwarning_level=0 \
                 --cross-file cross_opts.txt
             
+            monitor_memory
+            
             # 编译项目
             echo "===== 开始Ninja编译 ====="
-            # 使用单线程编译以减少内存压力
-            CXXFLAGS="-O0" CFLAGS="-O0" ninja -C build -j1
+            # 尝试仅编译主程序，避开测试目标
+            CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1 iptux
+            
+            # 如果特定目标编译失败，尝试完整编译
+            if [ $? -ne 0 ]; then
+              echo "特定目标编译失败，尝试完整编译..."
+              monitor_memory
+              CXXFLAGS="-O0 -fno-omit-frame-pointer" CFLAGS="-O0 -fno-omit-frame-pointer" ninja -C build -j1
+            fi
+            
+            monitor_memory
+            
+            # 停止内存监控
+            kill $MONITOR_PID
             
             # 创建安装目录并安装
             echo "编译成功，开始安装..."
