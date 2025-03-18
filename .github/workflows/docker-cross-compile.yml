@@ -89,7 +89,8 @@ jobs:
             
             # 编译项目
             echo "===== 开始Ninja编译 ====="
-            ninja -C build -j4
+            # 使用更少的线程进行编译，减少内存压力
+            ninja -C build -j2
             
             # 创建安装目录并安装
             echo "编译成功，开始安装..."
