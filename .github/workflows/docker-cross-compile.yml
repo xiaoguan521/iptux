@@ -92,7 +92,7 @@ jobs:
             
             # 配置项目 - 简化配置，参照build-package.yml
             echo "===== 开始Meson配置 ======"
-            meson setup build --buildtype=release -Doptimization=0 -Dwerror=false -Dwarning_level=0
+            meson setup build --buildtype=release -Doptimization=0 -Dwerror=false -Dwarning_level=0 -Dtests=false
             
             # RecvFile.cpp可能会导致编译器段错误，尝试提前对其应用特殊处理
             echo "对RecvFile.cpp应用特殊优化设置"
