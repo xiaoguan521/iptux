@@ -118,12 +118,12 @@ CoreThread::CoreThread(shared_ptr<ProgramData> data)
       tcpSock(-1),
       udpSock(-1),
       started(false),
-      pImpl(std::make_unique<Impl>()) {
+      pImpl(std::unique_ptr<Impl>(new Impl())) {
   if (config->GetBool("debug_dont_broadcast")) {
     pImpl->debugDontBroadcast = true;
   }
   pImpl->port = programData->port();
-  pImpl->udp_data_service = make_unique<UdpDataService>(*this);
+  pImpl->udp_data_service = std::unique_ptr<UdpDataService>(new UdpDataService(*this));
   pImpl->me = make_shared<PalInfo>("127.0.0.1", port());
   (*pImpl->me)
       .setUser(g_get_user_name())
@@ -674,7 +674,7 @@ std::unique_ptr<TransFileModel> CoreThread::GetTransTaskStat(int taskId) const {
   if (task == pImpl->transTasks.end()) {
     return {};
   }
-  return make_unique<TransFileModel>(task->second->getTransFileModel());
+  return std::unique_ptr<TransFileModel>(new TransFileModel(task->second->getTransFileModel()));
 }
 
 void CoreThread::clearFinishedTransTasks() {
@@ -725,7 +725,7 @@ vector<unique_ptr<TransFileModel>> CoreThread::listTransTasks() const {
   Lock();
   for (auto it = pImpl->transTasks.begin(); it != pImpl->transTasks.end();
        it++) {
-    res.push_back(make_unique<TransFileModel>(it->second->getTransFileModel()));
+    res.push_back(std::unique_ptr<TransFileModel>(new TransFileModel(it->second->getTransFileModel())));
   }
   Unlock();
   return res;
