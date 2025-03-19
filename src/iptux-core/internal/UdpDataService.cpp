@@ -29,7 +29,7 @@ unique_ptr<UdpData> UdpDataService::process(in_addr ipv4,
     LOG_INFO("received udp message from %s:%d, size %zu",
              inAddrToString(ipv4).c_str(), port, size);
   }
-  auto udata = std::unique_ptr<UdpData>(new UdpData(core_thread_, ipv4, buf, size));
+  auto udata = make_unique<UdpData>(core_thread_, ipv4, buf, size);
 
   if (run) {
     process(*udata);
