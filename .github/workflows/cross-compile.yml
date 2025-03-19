@@ -60,19 +60,39 @@ jobs:
           sudo apt-get install -y ${{ env.DEB_PKGS }}
           
           # 验证编译器安装
-          ls -la /usr/bin/${{ env.CROSS_TRIPLE }}*
-          ${{ env.CROSS_TRIPLE }}-gcc --version
-          ${{ env.CROSS_TRIPLE }}-g++ --version
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            ls -la /usr/bin/aarch64-linux-gnu*
+            aarch64-linux-gnu-gcc --version
+            aarch64-linux-gnu-g++ --version
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            ls -la /usr/bin/arm-linux-gnueabihf*
+            arm-linux-gnueabihf-gcc --version
+            arm-linux-gnueabihf-g++ --version
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            ls -la /usr/bin/riscv64-linux-gnu*
+            riscv64-linux-gnu-gcc --version
+            riscv64-linux-gnu-g++ --version
+          fi
           
       - name: Setup Meson cross file
         run: |
           mkdir -p cross-files
+          
+          # 根据目标架构设置编译器
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            TRIPLE="aarch64-linux-gnu"
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            TRIPLE="arm-linux-gnueabihf"
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            TRIPLE="riscv64-linux-gnu"
+          fi
+          
           cat > cross-files/${{ github.event.inputs.target_arch }}.ini << EOF
           [binaries]
-          c = '${{ env.CROSS_TRIPLE }}-gcc'
-          cpp = '${{ env.CROSS_TRIPLE }}-g++'
-          ar = '${{ env.CROSS_TRIPLE }}-ar'
-          strip = '${{ env.CROSS_TRIPLE }}-strip'
+          c = '${TRIPLE}-gcc'
+          cpp = '${TRIPLE}-g++'
+          ar = '${TRIPLE}-ar'
+          strip = '${TRIPLE}-strip'
           pkgconfig = 'pkg-config'
           
           [properties]
@@ -126,6 +146,15 @@ jobs:
         run: |
           mkdir -p debian-pkg/DEBIAN
           
+          # 设置架构变量
+          if [ "${{ github.event.inputs.target_arch }}" == "aarch64" ]; then
+            DEB_ARCH="arm64"
+          elif [ "${{ github.event.inputs.target_arch }}" == "arm32v7" ]; then
+            DEB_ARCH="armhf"
+          elif [ "${{ github.event.inputs.target_arch }}" == "riscv64" ]; then
+            DEB_ARCH="riscv64"
+          fi
+          
           # 检查pkg目录是否存在
           if [ ! -d "pkg/usr" ]; then
             echo "pkg/usr 目录不存在，创建基本结构..."
@@ -144,7 +173,7 @@ jobs:
           Version: 0.9.4
           Section: net
           Priority: optional
-          Architecture: ${{ env.DEB_ARCH }}
+          Architecture: ${DEB_ARCH}
           Maintainer: IPTUX Team <example@example.com>
           Description: IP Messenger client for Linux
            IPTUX is an IP Messenger client for Linux.
@@ -174,7 +203,7 @@ jobs:
           dpkg-deb --build --root-owner-group debian-pkg
           
           # 重命名Debian包
-          mv debian-pkg.deb iptux_0.9.4_${{ env.DEB_ARCH }}.deb
+          mv debian-pkg.deb iptux_0.9.4_${DEB_ARCH}.deb
           
           # 创建tar包
           mkdir -p deploy
@@ -186,6 +215,6 @@ jobs:
         with:
           name: iptux-${{ github.event.inputs.target_arch }}-packages
           path: |
-            iptux_0.9.4_${{ env.DEB_ARCH }}.deb
-            iptux-${{ github.event.inputs.target_arch }}.tar.gz
+            iptux_*.deb
+            iptux-*.tar.gz
           retention-days: 7 
